@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import LessonPanel from "../components/LessonPanel";
-import { getLesson, getTopic, logTaught, refreshLesson } from "../api/client";
+import { exportLessonPdf, getLesson, getTopic, logTaught, refreshLesson } from "../api/client";
 
 const TABS = [
   { key: "notes", label: "Lesson Notes" },
@@ -82,6 +82,7 @@ export default function Lesson() {
   const [regenerating, setRegenerating] = useState(false);
   const [taughtFormOpen, setTaughtFormOpen] = useState(false);
   const [taughtJustLogged, setTaughtJustLogged] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const load = () => {
     setStatus("loading");
@@ -117,6 +118,17 @@ export default function Lesson() {
       window.alert("Regeneration failed — please try again shortly.");
     } finally {
       setRegenerating(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExporting(true);
+    try {
+      await exportLessonPdf(topicId);
+    } catch {
+      window.alert("PDF export failed — please try again shortly.");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -194,6 +206,14 @@ export default function Lesson() {
             className="rounded border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
           >
             {regenerating ? "Regenerating…" : "Regenerate"}
+          </button>
+
+          <button
+            onClick={handleExportPdf}
+            disabled={exporting}
+            className="rounded border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
+          >
+            {exporting ? "Exporting…" : "Export to PDF"}
           </button>
 
           {!taughtFormOpen && !taughtJustLogged && (

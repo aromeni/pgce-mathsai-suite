@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import DifficultyBadge from "../components/DifficultyBadge";
 import QuestionBlock from "../components/QuestionBlock";
-import { getQuestions, getTopic, refreshQuestions } from "../api/client";
+import { exportQuestionsPdf, getQuestions, getTopic, refreshQuestions } from "../api/client";
 
 const DIFFICULTY_TIERS = ["Foundation", "Developing", "Extending"];
 
@@ -16,6 +16,7 @@ export default function Questions() {
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [errorMessage, setErrorMessage] = useState("");
   const [regenerating, setRegenerating] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     setStatus("loading");
@@ -45,6 +46,20 @@ export default function Questions() {
       window.alert("Regeneration failed — please try again shortly.");
     } finally {
       setRegenerating(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExporting(true);
+    try {
+      // Exports all three difficulty tiers in one PDF (CLAUDE.md: GET
+      // /api/export/questions/{topic_id}/pdf covers all tiers), regardless
+      // of which tier tab is currently active.
+      await exportQuestionsPdf(topicId);
+    } catch {
+      window.alert("PDF export failed — please try again shortly.");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -96,11 +111,12 @@ export default function Questions() {
           {regenerating ? "Regenerating…" : "Regenerate Questions"}
         </button>
         <button
-          disabled
-          title="PDF export lands in Phase 7"
-          className="rounded border border-border px-3 py-1.5 text-sm text-text-secondary opacity-40"
+          onClick={handleExportPdf}
+          disabled={exporting}
+          title="Exports Foundation, Developing and Extending in one PDF"
+          className="rounded border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
         >
-          Export to PDF
+          {exporting ? "Exporting…" : "Export to PDF"}
         </button>
       </div>
 

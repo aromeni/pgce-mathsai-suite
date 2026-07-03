@@ -4,7 +4,7 @@ Automated KS3/KS4 Edexcel mathematics teaching system for a single teacher — l
 
 This README is a stub that will grow with each implementation phase (see `CLAUDE.md` for the full 9-phase roadmap).
 
-## Status: Phase 6 — Progress Tracking
+## Status: Phase 7 — PDF Export
 
 Implemented:
 - FastAPI backend skeleton with SQLAlchemy models for all five tables (`topics`, `lesson_cache`, `question_cache`, `teaching_log`, `regeneration_log`)
@@ -16,16 +16,15 @@ Implemented:
 - **Lessons router** — `GET /api/lessons/{topic_id}`, `POST /api/lessons/{topic_id}/refresh` (404 on missing topic, 503 on generation failure)
 - **Questions router** — `GET /api/questions/{topic_id}/{difficulty}`, `POST .../refresh` (404, 422 on invalid difficulty tier via a `Literal` path type, 503 on generation failure)
 - **Progress router** — full CRUD against `teaching_log`: `GET /api/progress`, `POST /api/progress`, `GET /api/progress/topic/{topic_id}`, `DELETE /api/progress/{id}`
-- Pytest suite (`backend/tests/`, 57 tests) — the Anthropic client is always mocked; no test ever calls the real API
+- **Export router** — `GET /api/export/lesson/{topic_id}/pdf`, `GET /api/export/questions/{topic_id}/pdf` (all three difficulty tiers in one document). Content is fetched through the same `cache_service.get_lesson()` / `get_questions()` used by the Lessons/Questions routers (cache hit, or lazily generate-and-cache on miss), then rendered to print-friendly HTML and converted to PDF with **WeasyPrint** (chosen over ReportLab — confirmed with the user — since the content shape, markdown notes plus vocab tables plus question/mark-scheme cards, maps far more directly onto styled HTML than onto ReportLab's canvas/flowables API). Lesson notes are converted from markdown via the `markdown` package; every other AI-generated text field is HTML-escaped before interpolation, since maths content routinely contains literal `<`/`>` (inequalities) that would otherwise be misread as stray tags by the renderer. 404 on missing topic, 503 on AI generation failure, 500 on a WeasyPrint rendering failure, per CLAUDE.md's Error Handling section.
+- Pytest suite (`backend/tests/`, 63 tests) — the Anthropic client is always mocked; no test ever calls the real API
 - **Frontend** — Vite + React 19 + Tailwind v3 + React Router, styled to CLAUDE.md's dark palette (`#0d0d14` background, `#00d4b8` teal accent, Syne headings, DM Mono body). `Dashboard.jsx` fetches `/api/topics` + `/api/progress` and renders a KS3/KS4 toggle, a strand filter derived from the loaded data, and a topic-card grid grouped by strand — each card shows the taught tick and cached-lesson bolt icon and links to `/lesson/:id`. The Vite dev server proxies `/api` to the backend so the client never needs backend CORS config (deferred to Phase 8 as planned).
-- **`Lesson.jsx`** — full lesson package view: topic header (key stage/strand/Edexcel ref), three tabs (Lesson Notes rendered as markdown via `react-markdown` plus a structured Worked Examples section, Key Vocabulary table, Common Errors cards), the three difficulty-tier buttons that route to `/questions/:topicId/:tier`, a Regenerate button (gated by a `window.confirm` credit-spend warning — the full `regeneration_log` audit trail + polished confirmation modal is Phase 9 scope, this is a minimal placeholder against accidental clicks in the meantime), and an inline Mark as Taught form (class label + date) that posts to `/api/progress`. If the API returns `stale: true` (the Phase 2 stale-cache fallback), a small amber note surfaces this rather than silently presenting old content as fresh.
-- **`Questions.jsx`** — difficulty-tier tabs (`DifficultyBadge` component, tier-coloured per CLAUDE.md), each question rendered via `QuestionBlock` with a type badge, marks, and a Show Answer toggle that reveals the answer + mark scheme. A disabled, clearly-labelled "Export to PDF" button flags that PDF export is Phase 7 work rather than silently omitting the button CLAUDE.md's spec calls for.
+- **`Lesson.jsx`** — full lesson package view: topic header (key stage/strand/Edexcel ref), three tabs (Lesson Notes rendered as markdown via `react-markdown` plus a structured Worked Examples section, Key Vocabulary table, Common Errors cards), the three difficulty-tier buttons that route to `/questions/:topicId/:tier`, a Regenerate button (gated by a `window.confirm` credit-spend warning — the full `regeneration_log` audit trail + polished confirmation modal is Phase 9 scope, this is a minimal placeholder against accidental clicks in the meantime), an inline Mark as Taught form (class label + date) that posts to `/api/progress`, and an Export to PDF button downloading the lesson notes/worked examples/vocabulary/common errors as one document. If the API returns `stale: true` (the Phase 2 stale-cache fallback), a small amber note surfaces this rather than silently presenting old content as fresh.
+- **`Questions.jsx`** — difficulty-tier tabs (`DifficultyBadge` component, tier-coloured per CLAUDE.md), each question rendered via `QuestionBlock` with a type badge, marks, and a Show Answer toggle that reveals the answer + mark scheme. The "Export to PDF" button (previously a disabled placeholder) now downloads all three tiers as one PDF via the export router.
 - **`Progress.jsx`** — full teaching history table: date, topic (linking back to `/lesson/:id`), key stage, strand, class label, notes, and a Remove action against `DELETE /api/progress/{id}`. Key stage and strand filters are derived from the logged entries' joined topic data (topics are fetched separately and joined client-side by `topic_id`, since `TeachingLogRead` only carries `topic_id`) — strand options cascade from the selected key stage, same pattern as the Dashboard's sidebar filter. The taught-tick indicator on `TopicCard` was already wired in Phase 4 via the same `getProgress()` call, so no change was needed there.
 - Added a slim top nav bar (`Dashboard` / `Progress` links) to `App.jsx` — Phase 4/5 had no way to actually reach `/progress` in the browser, since only a direct URL or the (until now nonexistent) nav link could get there.
 
-**Export router remains a placeholder** — deferred to Phase 7, since it genuinely needs `weasyprint`/`reportlab`, which aren't installed yet.
-
-Not yet implemented: Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase-by-phase plan.
+Not yet implemented: Docker, auth, CI. See `CLAUDE.md` for the phase-by-phase plan.
 
 ## Tech stack
 
@@ -33,6 +32,7 @@ Not yet implemented: Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase
 - SQLite via SQLAlchemy (WAL mode enabled)
 - Alembic for migrations
 - `python-dotenv` for local `.env` loading
+- `weasyprint` for server-side PDF export, `markdown` for converting lesson notes to HTML before rendering
 - `pytest` + `httpx` for testing, with the Anthropic client mocked via `unittest.mock`
 - React 19 + Vite + Tailwind CSS v3 + React Router, via Axios (`frontend/src/api/client.js`)
 - `react-markdown` for rendering AI-generated lesson notes
@@ -40,6 +40,8 @@ Not yet implemented: Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase
 ## Local setup
 
 ### Backend
+
+WeasyPrint (PDF export) needs Pango, Cairo, and GDK-Pixbuf as native libraries — install them first, e.g. on macOS: `brew install pango cairo gdk-pixbuf`. No extra step is needed in the Phase 8 Docker image; these install via `apt-get` there.
 
 ```bash
 cd mathsai/backend

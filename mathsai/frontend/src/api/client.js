@@ -41,4 +41,30 @@ export const logTaught = (entry) =>
 export const deleteProgress = (logId) =>
   client.delete(`/progress/${logId}`).then((res) => res.data);
 
+function extractFilename(contentDisposition, fallback) {
+  const match = contentDisposition?.match(/filename="?([^"]+)"?/);
+  return match ? match[1] : fallback;
+}
+
+function downloadBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+export const exportLessonPdf = (topicId) =>
+  client.get(`/export/lesson/${topicId}/pdf`, { responseType: "blob" }).then((res) => {
+    downloadBlob(res.data, extractFilename(res.headers["content-disposition"], `lesson-${topicId}.pdf`));
+  });
+
+export const exportQuestionsPdf = (topicId) =>
+  client.get(`/export/questions/${topicId}/pdf`, { responseType: "blob" }).then((res) => {
+    downloadBlob(res.data, extractFilename(res.headers["content-disposition"], `questions-${topicId}.pdf`));
+  });
+
 export default client;

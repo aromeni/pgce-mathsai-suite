@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from database import engine, get_db
 from services.curriculum import seed_topics
 import models  # noqa: F401 — ensures all models are registered on Base
-from routers import lessons, progress, questions, topics
+from routers import export, lessons, progress, questions, topics
 
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -49,3 +49,4 @@ app.include_router(topics.router)
 app.include_router(lessons.router)
 app.include_router(questions.router)
 app.include_router(progress.router)
+app.include_router(export.router)
