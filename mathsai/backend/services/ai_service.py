@@ -115,6 +115,15 @@ def _call_with_retry(system: str, user_prompt: str, log_context: Optional[dict] 
     timeout/429/5xx with a short backoff. Raises AIGenerationError if both
     attempts fail.
 
+    Prompt caching (`cache_control` on the system block) was tried and
+    reverted — SYSTEM_PROMPT is ~80-120 tokens, well under Anthropic's
+    ~1024-token minimum cacheable block size for Sonnet-tier models, so the
+    marker was silently ignored (confirmed live: cache_creation_input_tokens
+    and cache_read_input_tokens both came back 0). The SQLite content cache
+    in cache_service.py is what actually keeps generation calls rare here;
+    nothing in these prompts is large enough for Anthropic's own caching to
+    help on top of that.
+
     Logs request metadata on success — topic_id, difficulty, duration,
     token count (CLAUDE.md Production Hardening — Logging) — never the
     request/response bodies themselves, which could carry the API key in
