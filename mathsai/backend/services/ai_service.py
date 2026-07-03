@@ -1,4 +1,189 @@
-# All Anthropic API calls — single source of truth. Implemented in Phase 2.
-# Model: claude-sonnet-5 (per plan decision — CLAUDE.md's literal
-# "claude-sonnet-4-6" does not exist).
-# See CLAUDE.md AI Service Design and Production Hardening — Resilience.
+"""All Anthropic API calls — single source of truth (CLAUDE.md AI Service Design).
+
+No other module should call the Anthropic SDK directly. Every call gets a
+30s timeout and one retry with a short backoff on timeout/429/5xx, per
+CLAUDE.md Production Hardening — Resilience.
+"""
+
+import json
+import logging
+import time
+from typing import Any, Optional
+
+from anthropic import Anthropic, APIStatusError, APITimeoutError, RateLimitError
+
+logger = logging.getLogger("mathsai")
+
+MODEL = "claude-sonnet-5"
+REQUEST_TIMEOUT_SECONDS = 30.0
+RETRY_BACKOFF_SECONDS = 2.0
+MAX_TOKENS = 8000
+
+_client: Optional[Anthropic] = None
+
+
+def _get_client() -> Anthropic:
+    global _client
+    if _client is None:
+        _client = Anthropic()
+    return _client
+
+
+class AIGenerationError(Exception):
+    """Raised when generation fails after the internal retry, or the
+    response cannot be parsed as JSON. Callers (cache_service) decide
+    whether to serve a stale cached row or propagate as a 503."""
+
+
+SYSTEM_PROMPT = (
+    "You are an experienced secondary mathematics teacher with deep expertise "
+    "in the Edexcel KS3 and KS4 curriculum. You write clear, pedagogically "
+    "sound lesson content for a trainee teacher to use directly in the "
+    "classroom. Your explanations are precise, your examples are well-chosen, "
+    "and your language is appropriate for secondary school pupils in England. "
+    "You always follow Edexcel specification language and notation."
+)
+
+LESSON_USER_PROMPT_TEMPLATE = """\
+Generate a complete lesson package for the following mathematics topic:
+
+Key Stage: {key_stage}
+Topic: {topic_name}
+Edexcel Reference: {edexcel_ref}
+
+Return your response as a valid JSON object with exactly this structure:
+
+{{
+  "lesson_notes": "Full markdown lesson notes including: learning objectives, key concept explanation, step-by-step method, at least two fully worked examples with commentary",
+  "worked_examples": [
+    {{
+      "title": "Example 1 — [description]",
+      "problem": "...",
+      "solution": "Step-by-step solution with working shown",
+      "teaching_note": "What the teacher should draw attention to"
+    }}
+  ],
+  "key_vocabulary": [
+    {{ "term": "...", "definition": "..." }}
+  ],
+  "common_errors": [
+    {{ "error": "...", "correction": "..." }}
+  ]
+}}
+
+Return only valid JSON. No preamble, no markdown fences.
+"""
+
+TIER_DEFINITIONS = {
+    "Foundation": "straightforward single-step questions testing basic recall and application",
+    "Developing": "two or three step questions requiring method selection",
+    "Extending": "multi-step, exam-style questions requiring reasoning, proof, or problem-solving",
+}
+
+QUESTIONS_USER_PROMPT_TEMPLATE = """\
+Generate 6 mathematics questions for the following:
+
+Key Stage: {key_stage}
+Topic: {topic_name}
+Difficulty tier: {difficulty}
+Tier definition: {tier_definition}
+Exam board: Edexcel
+
+Include a mix of question types: multiple choice, short answer, show-your-working, and exam-style.
+
+Return a valid JSON array with exactly this structure per question:
+
+[
+  {{
+    "question_number": 1,
+    "type": "short_answer",
+    "question_text": "...",
+    "answer": "...",
+    "mark_scheme": "Award 1 mark for... Award 2 marks for...",
+    "marks": 2
+  }}
+]
+
+For multiple_choice questions, include an "options" array: ["A) ...", "B) ...", "C) ...", "D) ..."]
+
+Return only a valid JSON array. No preamble, no markdown fences.
+"""
+
+
+def _call_with_retry(system: str, user_prompt: str) -> str:
+    """Call the Anthropic API with a 30s timeout, retrying once on
+    timeout/429/5xx with a short backoff. Raises AIGenerationError if both
+    attempts fail."""
+    client = _get_client()
+    last_exc: Optional[Exception] = None
+
+    for attempt in range(2):
+        try:
+            response = client.with_options(timeout=REQUEST_TIMEOUT_SECONDS).messages.create(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                thinking={"type": "disabled"},
+                system=system,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            return "".join(
+                block.text for block in response.content if block.type == "text"
+            ).strip()
+        except (APITimeoutError, RateLimitError, APIStatusError) as exc:
+            last_exc = exc
+            logger.error(
+                "AI generation attempt %d failed: %s: %s",
+                attempt + 1,
+                type(exc).__name__,
+                exc,
+            )
+            if attempt == 0:
+                time.sleep(RETRY_BACKOFF_SECONDS)
+
+    raise AIGenerationError(
+        "Generation temporarily unavailable — please try again shortly."
+    ) from last_exc
+
+
+def _parse_json(raw_text: str) -> Any:
+    text = raw_text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise AIGenerationError(f"AI returned invalid JSON: {exc}") from exc
+
+
+def generate_lesson(key_stage: str, topic_name: str, edexcel_ref: Optional[str]) -> dict:
+    """Generate a lesson package for one topic. Returns parsed JSON (dict).
+    Raises AIGenerationError on repeated API failure or invalid JSON."""
+    user_prompt = LESSON_USER_PROMPT_TEMPLATE.format(
+        key_stage=key_stage,
+        topic_name=topic_name,
+        edexcel_ref=edexcel_ref or "N/A",
+    )
+    raw = _call_with_retry(SYSTEM_PROMPT, user_prompt)
+    return _parse_json(raw)
+
+
+def generate_questions(key_stage: str, topic_name: str, difficulty: str) -> list:
+    """Generate 6 questions for one topic/difficulty tier. Returns parsed
+    JSON (list). Raises AIGenerationError on repeated API failure, invalid
+    JSON, or an unknown difficulty tier."""
+    if difficulty not in TIER_DEFINITIONS:
+        raise ValueError(
+            f"Invalid difficulty tier '{difficulty}'. "
+            f"Must be one of {sorted(TIER_DEFINITIONS)}."
+        )
+    user_prompt = QUESTIONS_USER_PROMPT_TEMPLATE.format(
+        key_stage=key_stage,
+        topic_name=topic_name,
+        difficulty=difficulty,
+        tier_definition=TIER_DEFINITIONS[difficulty],
+    )
+    raw = _call_with_retry(SYSTEM_PROMPT, user_prompt)
+    return _parse_json(raw)
