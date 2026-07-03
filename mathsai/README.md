@@ -4,18 +4,23 @@ Automated KS3/KS4 Edexcel mathematics teaching system for a single teacher — l
 
 This README is a stub that will grow with each implementation phase (see `CLAUDE.md` for the full 9-phase roadmap).
 
-## Status: Phase 2 — AI Service and Caching
+## Status: Phase 3 — All API Routes
 
 Implemented:
 - FastAPI backend skeleton with SQLAlchemy models for all five tables (`topics`, `lesson_cache`, `question_cache`, `teaching_log`, `regeneration_log`)
 - Alembic migrations, starting from `0001_initial_schema`
 - Full KS3/KS4 Edexcel curriculum taxonomy, seeded on first run (no AI calls)
-- `GET /api/topics` — the only working route so far
 - `services/ai_service.py` — single source of truth for Anthropic API calls (`claude-sonnet-5`), with a 30s timeout and one retry on timeout/429/5xx per call
-- `services/cache_service.py` — `get_lesson()` / `get_questions()` implementing cache hit/miss, `force_refresh`, one retry on Pydantic validation failure, and falling back to a stale cached row rather than raising when regeneration fails
-- Pytest suite (`backend/tests/`) — the Anthropic client is always mocked; no test ever calls the real API
+- `services/cache_service.py` — `get_lesson()` / `get_questions()` implementing cache hit/miss, `force_refresh`, one retry on Pydantic validation failure, an explicit empty-response check for questions, and falling back to a stale cached row rather than raising when regeneration fails
+- **Topics router** — `GET /api/topics`, `/api/topics/ks3`, `/api/topics/ks4`, `/api/topics/search?q=`, `/api/topics/{id}` (404 on missing topic)
+- **Lessons router** — `GET /api/lessons/{topic_id}`, `POST /api/lessons/{topic_id}/refresh` (404 on missing topic, 503 on generation failure)
+- **Questions router** — `GET /api/questions/{topic_id}/{difficulty}`, `POST .../refresh` (404, 422 on invalid difficulty tier via a `Literal` path type, 503 on generation failure)
+- **Progress router** — full CRUD against `teaching_log`: `GET /api/progress`, `POST /api/progress`, `GET /api/progress/topic/{topic_id}`, `DELETE /api/progress/{id}`. Implemented in full now rather than deferred to Phase 6, since it has no AI/PDF dependency — confirmed with the user; Phase 6 will build the frontend Progress page on top of this API.
+- Pytest suite (`backend/tests/`, 56 tests) — the Anthropic client is always mocked; no test ever calls the real API
 
-Not yet implemented: lesson/questions/progress/export routes, frontend, Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase-by-phase plan.
+**Export router remains a placeholder** — deferred to Phase 7, since it genuinely needs `weasyprint`/`reportlab`, which aren't installed yet.
+
+Not yet implemented: frontend, Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase-by-phase plan.
 
 ## Tech stack
 

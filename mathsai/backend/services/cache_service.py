@@ -174,29 +174,43 @@ def get_questions(
     return json.loads(row.questions)
 
 
+def _validate_questions_or_none(raw) -> Optional[QuestionSetSchema]:
+    try:
+        validated = QuestionSetSchema.model_validate(raw)
+    except ValidationError:
+        return None
+    if not validated.root:
+        # An empty list passes schema validation trivially but is useless —
+        # treated as a failure needing the same retry-then-raise handling
+        # (CLAUDE.md Error Handling: "Empty question response from AI →
+        # retry once, then return error").
+        return None
+    return validated
+
+
 def _generate_and_validate_questions(topic: Topic, difficulty: str) -> QuestionSetSchema:
     raw = ai_service.generate_questions(topic.key_stage, topic.topic_name, difficulty)
-    try:
-        return QuestionSetSchema.model_validate(raw)
-    except ValidationError as exc:
-        logger.error(
-            "Question validation failed (attempt 1) topic_id=%d difficulty=%s: %s",
-            topic.id,
-            difficulty,
-            exc,
-        )
-        raw_retry = ai_service.generate_questions(
-            topic.key_stage, topic.topic_name, difficulty
-        )
-        try:
-            return QuestionSetSchema.model_validate(raw_retry)
-        except ValidationError as exc2:
-            logger.error(
-                "Question validation failed (attempt 2) topic_id=%d difficulty=%s: %s",
-                topic.id,
-                difficulty,
-                exc2,
-            )
-            raise ai_service.AIGenerationError(
-                "Question content failed validation twice"
-            ) from exc2
+    validated = _validate_questions_or_none(raw)
+    if validated is not None:
+        return validated
+
+    logger.error(
+        "Question generation returned invalid or empty content (attempt 1) "
+        "topic_id=%d difficulty=%s",
+        topic.id,
+        difficulty,
+    )
+    raw_retry = ai_service.generate_questions(topic.key_stage, topic.topic_name, difficulty)
+    validated_retry = _validate_questions_or_none(raw_retry)
+    if validated_retry is not None:
+        return validated_retry
+
+    logger.error(
+        "Question generation returned invalid or empty content (attempt 2) "
+        "topic_id=%d difficulty=%s",
+        topic.id,
+        difficulty,
+    )
+    raise ai_service.AIGenerationError(
+        "Question content was empty or failed validation twice"
+    )

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, RootModel
@@ -60,3 +60,41 @@ class QuestionItem(BaseModel):
 
 class QuestionSetSchema(RootModel[List[QuestionItem]]):
     pass
+
+
+# --- API response / request schemas (Phase 3 routers) ---
+
+
+class LessonRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    topic_id: int
+    lesson_notes: str
+    worked_examples: List[WorkedExample]
+    key_vocabulary: List[VocabularyItem]
+    common_errors: List[CommonError]
+    generated_at: datetime
+    model_used: Optional[str] = None
+    reviewed: bool
+    reviewed_at: Optional[datetime] = None
+    stale: bool = False
+
+
+DifficultyTier = Literal["Foundation", "Developing", "Extending"]
+
+
+class TeachingLogCreate(BaseModel):
+    topic_id: int
+    taught_date: date
+    class_label: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class TeachingLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    topic_id: int
+    taught_date: date
+    class_label: Optional[str] = None
+    notes: Optional[str] = None

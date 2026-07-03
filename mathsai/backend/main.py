@@ -3,14 +3,14 @@ import os
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from database import engine, get_db
-from schemas import TopicRead
 from services.curriculum import seed_topics
-from models import Topic  # noqa: F401 — ensures models are registered on Base
+import models  # noqa: F401 — ensures all models are registered on Base
+from routers import lessons, progress, questions, topics
 
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -45,8 +45,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MathsAI", lifespan=lifespan)
 
-
-@app.get("/api/topics", response_model=list[TopicRead])
-def list_topics(db: Session = Depends(get_db)):
-    logger.info("GET /api/topics")
-    return db.query(Topic).order_by(Topic.key_stage, Topic.strand, Topic.topic_name).all()
+app.include_router(topics.router)
+app.include_router(lessons.router)
+app.include_router(questions.router)
+app.include_router(progress.router)

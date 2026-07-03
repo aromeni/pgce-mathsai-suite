@@ -190,3 +190,25 @@ def test_get_questions_serves_stale_cache_when_refresh_fails(db_session, topic):
         result = cache_service.get_questions(db_session, topic.id, "Foundation", force_refresh=True)
 
     assert result == EXPECTED_QUESTIONS_STORED
+
+
+def test_get_questions_empty_response_retries_then_succeeds(db_session, topic):
+    """CLAUDE.md Error Handling: 'Empty question response from AI -> retry
+    once, then return error.' An empty list passes schema validation
+    trivially, so it needs its own check distinct from validation failure."""
+    with patch.object(
+        ai_service, "generate_questions", side_effect=[[], VALID_QUESTIONS_RAW]
+    ) as mock_gen:
+        result = cache_service.get_questions(db_session, topic.id, "Foundation")
+
+    assert mock_gen.call_count == 2
+    assert result == EXPECTED_QUESTIONS_STORED
+
+
+def test_get_questions_empty_response_twice_raises_and_stores_nothing(db_session, topic):
+    with patch.object(ai_service, "generate_questions", side_effect=[[], []]) as mock_gen:
+        with pytest.raises(ai_service.AIGenerationError):
+            cache_service.get_questions(db_session, topic.id, "Foundation")
+
+    assert mock_gen.call_count == 2
+    assert db_session.query(QuestionCache).filter_by(topic_id=topic.id).count() == 0
