@@ -4,7 +4,7 @@ Automated KS3/KS4 Edexcel mathematics teaching system for a single teacher — l
 
 This README is a stub that will grow with each implementation phase (see `CLAUDE.md` for the full 9-phase roadmap).
 
-## Status: Phase 7 — PDF Export
+## Status: Phase 8 — Dockerfile and Deployment
 
 Implemented:
 - FastAPI backend skeleton with SQLAlchemy models for all five tables (`topics`, `lesson_cache`, `question_cache`, `teaching_log`, `regeneration_log`)
@@ -17,14 +17,17 @@ Implemented:
 - **Questions router** — `GET /api/questions/{topic_id}/{difficulty}`, `POST .../refresh` (404, 422 on invalid difficulty tier via a `Literal` path type, 503 on generation failure)
 - **Progress router** — full CRUD against `teaching_log`: `GET /api/progress`, `POST /api/progress`, `GET /api/progress/topic/{topic_id}`, `DELETE /api/progress/{id}`
 - **Export router** — `GET /api/export/lesson/{topic_id}/pdf`, `GET /api/export/questions/{topic_id}/pdf` (all three difficulty tiers in one document). Content is fetched through the same `cache_service.get_lesson()` / `get_questions()` used by the Lessons/Questions routers (cache hit, or lazily generate-and-cache on miss), then rendered to print-friendly HTML and converted to PDF with **WeasyPrint** (chosen over ReportLab — confirmed with the user — since the content shape, markdown notes plus vocab tables plus question/mark-scheme cards, maps far more directly onto styled HTML than onto ReportLab's canvas/flowables API). Lesson notes are converted from markdown via the `markdown` package; every other AI-generated text field is HTML-escaped before interpolation, since maths content routinely contains literal `<`/`>` (inequalities) that would otherwise be misread as stray tags by the renderer. 404 on missing topic, 503 on AI generation failure, 500 on a WeasyPrint rendering failure, per CLAUDE.md's Error Handling section.
-- Pytest suite (`backend/tests/`, 63 tests) — the Anthropic client is always mocked; no test ever calls the real API
+- **`GET /api/health`** — returns `{"status": "ok"}` for uptime checks / the deployment platform's health probe.
+- **CORS** — configured via `FRONTEND_ORIGIN` (comma-separated, never `*`). Defaults to `http://localhost:5173` for local dev. In the normal single-container deployment (below), the frontend is served by this same app on the same origin, so browsers never send a cross-origin request to the API at all — this setting only matters if a frontend is ever run against the API from a different origin.
+- **Single-container deployment** — the `Dockerfile` is a two-stage build: a `node:20-alpine` stage runs `npm run build` for the frontend, then a `python:3.11-slim` stage installs the backend plus WeasyPrint's native dependencies (Pango, Cairo, GDK-Pixbuf, via `apt-get`) and copies the built frontend into `backend/static/`. `main.py` serves that directory (mounted at `/assets`, with a catch-all route falling back to `index.html` for client-side routes like `/lesson/43`) only when the directory exists, so local `uvicorn main:app --reload` and the pytest suite are completely unaffected — they never see `backend/static/` at all, since it's created inside the Docker build, never checked into the repo. `docker-entrypoint.sh` runs `alembic upgrade head` before starting `uvicorn`, so a fresh mounted volume gets migrated (and the SQLite file created) automatically on first boot.
+- Pytest suite (`backend/tests/`, 66 tests) — the Anthropic client is always mocked; no test ever calls the real API
 - **Frontend** — Vite + React 19 + Tailwind v3 + React Router, styled to CLAUDE.md's dark palette (`#0d0d14` background, `#00d4b8` teal accent, Syne headings, DM Mono body). `Dashboard.jsx` fetches `/api/topics` + `/api/progress` and renders a KS3/KS4 toggle, a strand filter derived from the loaded data, and a topic-card grid grouped by strand — each card shows the taught tick and cached-lesson bolt icon and links to `/lesson/:id`. The Vite dev server proxies `/api` to the backend so the client never needs backend CORS config (deferred to Phase 8 as planned).
 - **`Lesson.jsx`** — full lesson package view: topic header (key stage/strand/Edexcel ref), three tabs (Lesson Notes rendered as markdown via `react-markdown` plus a structured Worked Examples section, Key Vocabulary table, Common Errors cards), the three difficulty-tier buttons that route to `/questions/:topicId/:tier`, a Regenerate button (gated by a `window.confirm` credit-spend warning — the full `regeneration_log` audit trail + polished confirmation modal is Phase 9 scope, this is a minimal placeholder against accidental clicks in the meantime), an inline Mark as Taught form (class label + date) that posts to `/api/progress`, and an Export to PDF button downloading the lesson notes/worked examples/vocabulary/common errors as one document. If the API returns `stale: true` (the Phase 2 stale-cache fallback), a small amber note surfaces this rather than silently presenting old content as fresh.
 - **`Questions.jsx`** — difficulty-tier tabs (`DifficultyBadge` component, tier-coloured per CLAUDE.md), each question rendered via `QuestionBlock` with a type badge, marks, and a Show Answer toggle that reveals the answer + mark scheme. The "Export to PDF" button (previously a disabled placeholder) now downloads all three tiers as one PDF via the export router.
 - **`Progress.jsx`** — full teaching history table: date, topic (linking back to `/lesson/:id`), key stage, strand, class label, notes, and a Remove action against `DELETE /api/progress/{id}`. Key stage and strand filters are derived from the logged entries' joined topic data (topics are fetched separately and joined client-side by `topic_id`, since `TeachingLogRead` only carries `topic_id`) — strand options cascade from the selected key stage, same pattern as the Dashboard's sidebar filter. The taught-tick indicator on `TopicCard` was already wired in Phase 4 via the same `getProgress()` call, so no change was needed there.
 - Added a slim top nav bar (`Dashboard` / `Progress` links) to `App.jsx` — Phase 4/5 had no way to actually reach `/progress` in the browser, since only a direct URL or the (until now nonexistent) nav link could get there.
 
-Not yet implemented: Docker, auth, CI. See `CLAUDE.md` for the phase-by-phase plan.
+Not yet implemented: `reviewed` review-workflow UI, `regeneration_log` audit trail + polished confirm dialog, structured logging refinements, CI. See `CLAUDE.md` for the phase-by-phase plan (Phase 9).
 
 ## Tech stack
 
@@ -69,6 +72,36 @@ npm run dev
 
 Visit `http://localhost:5173` — the dev server proxies `/api/*` requests to `http://localhost:8000`, so the backend must be running too.
 
+## Docker setup
+
+This is the deployment path — a single container serving both the built frontend and the API on one port.
+
+```bash
+cd mathsai
+cp .env.example .env   # fill in a real ANTHROPIC_API_KEY
+mkdir -p data           # the SQLite file lives here, on a bind-mounted volume — see below
+docker compose up --build
+```
+
+Visit `http://localhost:8000` — the frontend, API, and PDF export all work from this one address. `GET /api/health` returns `{"status": "ok"}`.
+
+**Persistence**: `docker-compose.yml` mounts `./data` (relative to the `mathsai/` directory) to `/app/data` inside the container, and `DATABASE_URL` is set to `sqlite:////app/data/mathsai.db`. The `.db` file is the only copy of everything generated and taught (CLAUDE.md — Production Hardening → Database migrations and backups) — **back it up before pulling a new image or running a migration**, e.g. `cp data/mathsai.db data/mathsai.db.bak`. Never deploy this to a platform whose filesystem resets on redeploy (some free tiers) without pointing `DATABASE_URL` at that platform's own persistent volume equivalent instead.
+
+**Rebuilding after a code change**: `docker compose up --build` (add `-d` to run in the background). Migrations run automatically on every container start via `docker-entrypoint.sh` (`alembic upgrade head` before `uvicorn`), so a schema change just needs a rebuild + restart, not a manual migration step.
+
+## Deployment (Railway / Render)
+
+The single Dockerfile above is what either platform builds from directly (both support "deploy from Dockerfile"):
+
+1. Push this repo to a Git remote the platform can pull from.
+2. Point the platform at the repo root (where `Dockerfile` lives) — no build command override needed, it uses the Dockerfile as-is.
+3. Set `ANTHROPIC_API_KEY` via the platform's own secret manager — never commit it (see CLAUDE.md — Secrets management).
+4. Attach a **persistent volume** mounted at `/app/data`, and set `DATABASE_URL=sqlite:////app/data/mathsai.db` — without this, the SQLite file lives on that platform's ephemeral container filesystem and is silently wiped on every redeploy.
+5. Set the platform's health check path to `/api/health`.
+6. Set `FRONTEND_ORIGIN` only if you split the frontend out to its own origin — the default single-container path serves both from the same origin and doesn't need it.
+
+Per the Network access decision (below), the recommended path is still to keep this off the public internet entirely and reach it over Tailscale instead; Railway/Render are documented here only for the case where public hosting is deliberately chosen instead.
+
 ## Running tests
 
 ```bash
@@ -86,3 +119,5 @@ Tests never call the real Anthropic API — `ai_service` is mocked via `unittest
 ## Network access
 
 This system is intended to run privately over Tailscale (or an equivalent WireGuard mesh) rather than public hosting — no password-based auth is planned. See `CLAUDE.md` → Production Hardening → Network access and authentication.
+
+In practice: run `docker compose up -d` on whichever machine stays on (a home server, a always-on laptop, etc.), install Tailscale on that machine and join it to your tailnet, then reach `http://<that machine's tailnet name>:8000` from any other device on the same tailnet (phone, school laptop, etc.) — no port forwarding, no public exposure, no login screen needed, since the tailnet itself is the access control.

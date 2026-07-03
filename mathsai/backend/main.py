@@ -4,6 +4,9 @@ from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
@@ -45,8 +48,49 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MathsAI", lifespan=lifespan)
 
+# Never "*" (CLAUDE.md CORS and health checks). In the normal deployment path
+# (single container, Tailscale-only network — see Production Hardening →
+# Network access) the frontend is served by this same app on the same
+# origin, so browsers never send a cross-origin request here at all; this
+# only matters for the local case of pointing a separately-run frontend
+# dev server directly at the API without Vite's proxy.
+_frontend_origins = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_frontend_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(topics.router)
 app.include_router(lessons.router)
 app.include_router(questions.router)
 app.include_router(progress.router)
 app.include_router(export.router)
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
+
+
+# Serves the production frontend build (Docker copies `frontend/dist` here as
+# `backend/static/` — see Dockerfile) from the same origin as the API, so no
+# CORS or separate web server is needed in deployment. Registered last and
+# gated on the directory existing so local `uvicorn main:app --reload`
+# without a frontend build (and the pytest suite) are unaffected — the Vite
+# dev proxy handles the local frontend/backend split instead.
+_FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_FRONTEND_DIST):
+    app.mount(
+        "/assets", StaticFiles(directory=os.path.join(_FRONTEND_DIST, "assets")), name="assets"
+    )
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        return FileResponse(os.path.join(_FRONTEND_DIST, "index.html"))
