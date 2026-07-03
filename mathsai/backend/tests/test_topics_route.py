@@ -15,8 +15,10 @@ def test_get_topics_returns_full_curriculum(client):
         "edexcel_ref",
         "difficulty_band",
         "created_at",
+        "has_cached_lesson",
     }
     assert expected_keys <= set(data[0].keys())
+    assert all(t["has_cached_lesson"] is False for t in data)
 
 
 def test_get_topics_split_by_key_stage(client):
@@ -80,3 +82,37 @@ def test_get_single_topic_by_id(client):
 def test_get_single_topic_not_found_returns_404(client):
     response = client.get("/api/topics/999999")
     assert response.status_code == 404
+
+
+def test_has_cached_lesson_reflects_lesson_cache_state(client, db_session):
+    """has_cached_lesson must come from a real lesson_cache row, not just
+    exist as a stub field — and must never be computed by generating
+    content on the fly."""
+    from datetime import datetime
+
+    from models import LessonCache
+
+    all_topics = client.get("/api/topics").json()
+    target_id = all_topics[0]["id"]
+    assert all_topics[0]["has_cached_lesson"] is False
+
+    db_session.add(
+        LessonCache(
+            topic_id=target_id,
+            lesson_notes="# Test",
+            worked_examples="[]",
+            key_vocabulary="[]",
+            common_errors="[]",
+            generated_at=datetime.utcnow(),
+            model_used="claude-sonnet-5",
+            reviewed=False,
+        )
+    )
+    db_session.commit()
+
+    updated = client.get("/api/topics").json()
+    flagged = next(t for t in updated if t["id"] == target_id)
+    assert flagged["has_cached_lesson"] is True
+
+    others = [t for t in updated if t["id"] != target_id]
+    assert all(t["has_cached_lesson"] is False for t in others)

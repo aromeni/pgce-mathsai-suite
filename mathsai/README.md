@@ -4,7 +4,7 @@ Automated KS3/KS4 Edexcel mathematics teaching system for a single teacher — l
 
 This README is a stub that will grow with each implementation phase (see `CLAUDE.md` for the full 9-phase roadmap).
 
-## Status: Phase 3 — All API Routes
+## Status: Phase 4 — Frontend Scaffold
 
 Implemented:
 - FastAPI backend skeleton with SQLAlchemy models for all five tables (`topics`, `lesson_cache`, `question_cache`, `teaching_log`, `regeneration_log`)
@@ -12,15 +12,16 @@ Implemented:
 - Full KS3/KS4 Edexcel curriculum taxonomy, seeded on first run (no AI calls)
 - `services/ai_service.py` — single source of truth for Anthropic API calls (`claude-sonnet-5`), with a 30s timeout and one retry on timeout/429/5xx per call
 - `services/cache_service.py` — `get_lesson()` / `get_questions()` implementing cache hit/miss, `force_refresh`, one retry on Pydantic validation failure, an explicit empty-response check for questions, and falling back to a stale cached row rather than raising when regeneration fails
-- **Topics router** — `GET /api/topics`, `/api/topics/ks3`, `/api/topics/ks4`, `/api/topics/search?q=`, `/api/topics/{id}` (404 on missing topic)
+- **Topics router** — `GET /api/topics`, `/api/topics/ks3`, `/api/topics/ks4`, `/api/topics/search?q=`, `/api/topics/{id}` (404 on missing topic), each now including a `has_cached_lesson` flag computed in one bulk query (added in Phase 4 to support the Dashboard's cached-content indicator — never generates content just to answer the question)
 - **Lessons router** — `GET /api/lessons/{topic_id}`, `POST /api/lessons/{topic_id}/refresh` (404 on missing topic, 503 on generation failure)
 - **Questions router** — `GET /api/questions/{topic_id}/{difficulty}`, `POST .../refresh` (404, 422 on invalid difficulty tier via a `Literal` path type, 503 on generation failure)
-- **Progress router** — full CRUD against `teaching_log`: `GET /api/progress`, `POST /api/progress`, `GET /api/progress/topic/{topic_id}`, `DELETE /api/progress/{id}`. Implemented in full now rather than deferred to Phase 6, since it has no AI/PDF dependency — confirmed with the user; Phase 6 will build the frontend Progress page on top of this API.
-- Pytest suite (`backend/tests/`, 56 tests) — the Anthropic client is always mocked; no test ever calls the real API
+- **Progress router** — full CRUD against `teaching_log`: `GET /api/progress`, `POST /api/progress`, `GET /api/progress/topic/{topic_id}`, `DELETE /api/progress/{id}`
+- Pytest suite (`backend/tests/`, 57 tests) — the Anthropic client is always mocked; no test ever calls the real API
+- **Frontend** — Vite + React 19 + Tailwind v3 + React Router, styled to CLAUDE.md's dark palette (`#0d0d14` background, `#00d4b8` teal accent, Syne headings, DM Mono body). `Dashboard.jsx` fetches `/api/topics` + `/api/progress` and renders a KS3/KS4 toggle, a strand filter derived from the loaded data, and a topic-card grid grouped by strand — each card shows the taught tick and cached-lesson bolt icon and links to `/lesson/:id`. `Lesson.jsx`/`Questions.jsx`/`Progress.jsx` are stub pages pending Phase 5/6. The Vite dev server proxies `/api` to the backend so the client never needs backend CORS config (deferred to Phase 8 as planned).
 
 **Export router remains a placeholder** — deferred to Phase 7, since it genuinely needs `weasyprint`/`reportlab`, which aren't installed yet.
 
-Not yet implemented: frontend, Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase-by-phase plan.
+Not yet implemented: full Lesson/Questions/Progress page UIs, Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase-by-phase plan.
 
 ## Tech stack
 
@@ -29,8 +30,11 @@ Not yet implemented: frontend, Docker, auth, PDF export, CI. See `CLAUDE.md` for
 - Alembic for migrations
 - `python-dotenv` for local `.env` loading
 - `pytest` + `httpx` for testing, with the Anthropic client mocked via `unittest.mock`
+- React 19 + Vite + Tailwind CSS v3 + React Router, via Axios (`frontend/src/api/client.js`)
 
 ## Local setup
+
+### Backend
 
 ```bash
 cd mathsai/backend
@@ -47,6 +51,16 @@ uvicorn main:app --reload
 ```
 
 Then visit `http://localhost:8000/api/topics` to confirm the full curriculum list loads.
+
+### Frontend
+
+```bash
+cd mathsai/frontend
+npm install
+npm run dev
+```
+
+Visit `http://localhost:5173` — the dev server proxies `/api/*` requests to `http://localhost:8000`, so the backend must be running too.
 
 ## Running tests
 

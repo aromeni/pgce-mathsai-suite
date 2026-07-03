@@ -14,6 +14,7 @@ class TopicRead(BaseModel):
     edexcel_ref: Optional[str] = None
     difficulty_band: Optional[str] = None
     created_at: datetime
+    has_cached_lesson: bool = False
 
 
 # --- AI-generated lesson content validation (CLAUDE.md AI Service Design) ---
