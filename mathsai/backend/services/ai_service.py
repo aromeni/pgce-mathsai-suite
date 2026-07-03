@@ -89,7 +89,9 @@ Difficulty tier: {difficulty}
 Tier definition: {tier_definition}
 Exam board: Edexcel
 
-Include a mix of question types: multiple choice, short answer, show-your-working, and exam-style.
+Include a mix of question types. The "type" field for each question must be
+exactly one of these four strings (verbatim, no variations): "short_answer",
+"multiple_choice", "show_working", "exam_style".
 
 Return a valid JSON array with exactly this structure per question:
 
