@@ -4,7 +4,7 @@ Automated KS3/KS4 Edexcel mathematics teaching system for a single teacher — l
 
 This README is a stub that will grow with each implementation phase (see `CLAUDE.md` for the full 9-phase roadmap).
 
-## Status: Phase 4 — Frontend Scaffold
+## Status: Phase 5 — Lesson and Questions UI
 
 Implemented:
 - FastAPI backend skeleton with SQLAlchemy models for all five tables (`topics`, `lesson_cache`, `question_cache`, `teaching_log`, `regeneration_log`)
@@ -17,11 +17,14 @@ Implemented:
 - **Questions router** — `GET /api/questions/{topic_id}/{difficulty}`, `POST .../refresh` (404, 422 on invalid difficulty tier via a `Literal` path type, 503 on generation failure)
 - **Progress router** — full CRUD against `teaching_log`: `GET /api/progress`, `POST /api/progress`, `GET /api/progress/topic/{topic_id}`, `DELETE /api/progress/{id}`
 - Pytest suite (`backend/tests/`, 57 tests) — the Anthropic client is always mocked; no test ever calls the real API
-- **Frontend** — Vite + React 19 + Tailwind v3 + React Router, styled to CLAUDE.md's dark palette (`#0d0d14` background, `#00d4b8` teal accent, Syne headings, DM Mono body). `Dashboard.jsx` fetches `/api/topics` + `/api/progress` and renders a KS3/KS4 toggle, a strand filter derived from the loaded data, and a topic-card grid grouped by strand — each card shows the taught tick and cached-lesson bolt icon and links to `/lesson/:id`. `Lesson.jsx`/`Questions.jsx`/`Progress.jsx` are stub pages pending Phase 5/6. The Vite dev server proxies `/api` to the backend so the client never needs backend CORS config (deferred to Phase 8 as planned).
+- **Frontend** — Vite + React 19 + Tailwind v3 + React Router, styled to CLAUDE.md's dark palette (`#0d0d14` background, `#00d4b8` teal accent, Syne headings, DM Mono body). `Dashboard.jsx` fetches `/api/topics` + `/api/progress` and renders a KS3/KS4 toggle, a strand filter derived from the loaded data, and a topic-card grid grouped by strand — each card shows the taught tick and cached-lesson bolt icon and links to `/lesson/:id`. The Vite dev server proxies `/api` to the backend so the client never needs backend CORS config (deferred to Phase 8 as planned).
+- **`Lesson.jsx`** — full lesson package view: topic header (key stage/strand/Edexcel ref), three tabs (Lesson Notes rendered as markdown via `react-markdown` plus a structured Worked Examples section, Key Vocabulary table, Common Errors cards), the three difficulty-tier buttons that route to `/questions/:topicId/:tier`, a Regenerate button (gated by a `window.confirm` credit-spend warning — the full `regeneration_log` audit trail + polished confirmation modal is Phase 9 scope, this is a minimal placeholder against accidental clicks in the meantime), and an inline Mark as Taught form (class label + date) that posts to `/api/progress`. If the API returns `stale: true` (the Phase 2 stale-cache fallback), a small amber note surfaces this rather than silently presenting old content as fresh.
+- **`Questions.jsx`** — difficulty-tier tabs (`DifficultyBadge` component, tier-coloured per CLAUDE.md), each question rendered via `QuestionBlock` with a type badge, marks, and a Show Answer toggle that reveals the answer + mark scheme. A disabled, clearly-labelled "Export to PDF" button flags that PDF export is Phase 7 work rather than silently omitting the button CLAUDE.md's spec calls for.
+- **Progress.jsx UI** remains a stub — the backend API is complete (Phase 3), but the Progress page/taught-indicator UI is Phase 6 as planned.
 
 **Export router remains a placeholder** — deferred to Phase 7, since it genuinely needs `weasyprint`/`reportlab`, which aren't installed yet.
 
-Not yet implemented: full Lesson/Questions/Progress page UIs, Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase-by-phase plan.
+Not yet implemented: Progress page UI, Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase-by-phase plan.
 
 ## Tech stack
 
@@ -31,6 +34,7 @@ Not yet implemented: full Lesson/Questions/Progress page UIs, Docker, auth, PDF 
 - `python-dotenv` for local `.env` loading
 - `pytest` + `httpx` for testing, with the Anthropic client mocked via `unittest.mock`
 - React 19 + Vite + Tailwind CSS v3 + React Router, via Axios (`frontend/src/api/client.js`)
+- `react-markdown` for rendering AI-generated lesson notes
 
 ## Local setup
 
