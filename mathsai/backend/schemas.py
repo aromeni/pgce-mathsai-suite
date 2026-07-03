@@ -84,6 +84,17 @@ class LessonRead(BaseModel):
 DifficultyTier = Literal["Foundation", "Developing", "Extending"]
 
 
+class QuestionSetStatus(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    topic_id: int
+    difficulty: DifficultyTier
+    generated_at: Optional[datetime] = None
+    model_used: Optional[str] = None
+    reviewed: bool = False
+    reviewed_at: Optional[datetime] = None
+
+
 class TeachingLogCreate(BaseModel):
     topic_id: int
     taught_date: date

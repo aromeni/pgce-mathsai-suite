@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
+import ConfirmDialog from "../components/ConfirmDialog";
 import LessonPanel from "../components/LessonPanel";
-import { exportLessonPdf, getLesson, getTopic, logTaught, refreshLesson } from "../api/client";
+import ReviewedMarker from "../components/ReviewedMarker";
+import {
+  exportLessonPdf,
+  getLesson,
+  getTopic,
+  logTaught,
+  markLessonReviewed,
+  refreshLesson,
+} from "../api/client";
 
 const TABS = [
   { key: "notes", label: "Lesson Notes" },
@@ -83,6 +92,8 @@ export default function Lesson() {
   const [taughtFormOpen, setTaughtFormOpen] = useState(false);
   const [taughtJustLogged, setTaughtJustLogged] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [confirmRegenerateOpen, setConfirmRegenerateOpen] = useState(false);
+  const [markingReviewed, setMarkingReviewed] = useState(false);
 
   const load = () => {
     setStatus("loading");
@@ -104,8 +115,8 @@ export default function Lesson() {
 
   useEffect(load, [topicId]);
 
-  const handleRegenerate = async () => {
-    if (!window.confirm("This will use API credits — continue?")) return;
+  const handleRegenerateConfirmed = async () => {
+    setConfirmRegenerateOpen(false);
     setRegenerating(true);
     try {
       const fresh = await refreshLesson(topicId);
@@ -118,6 +129,18 @@ export default function Lesson() {
       window.alert("Regeneration failed — please try again shortly.");
     } finally {
       setRegenerating(false);
+    }
+  };
+
+  const handleMarkReviewed = async () => {
+    setMarkingReviewed(true);
+    try {
+      const updated = await markLessonReviewed(topicId);
+      setLesson(updated);
+    } catch {
+      window.alert("Couldn't mark this reviewed — please try again.");
+    } finally {
+      setMarkingReviewed(false);
     }
   };
 
@@ -166,6 +189,13 @@ export default function Lesson() {
             showing previous version.
           </p>
         )}
+        <div className="mt-3">
+          <ReviewedMarker
+            reviewed={lesson.reviewed}
+            onMarkReviewed={handleMarkReviewed}
+            marking={markingReviewed}
+          />
+        </div>
       </div>
 
       <div className="mb-6 flex gap-1 border-b border-border">
@@ -201,7 +231,7 @@ export default function Lesson() {
 
         <div className="flex flex-wrap items-center gap-3">
           <button
-            onClick={handleRegenerate}
+            onClick={() => setConfirmRegenerateOpen(true)}
             disabled={regenerating}
             className="rounded border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
           >
@@ -239,6 +269,15 @@ export default function Lesson() {
           />
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmRegenerateOpen}
+        title="Regenerate lesson?"
+        message="This will use API credits — continue?"
+        confirmLabel="Regenerate"
+        onConfirm={handleRegenerateConfirmed}
+        onCancel={() => setConfirmRegenerateOpen(false)}
+      />
     </div>
   );
 }

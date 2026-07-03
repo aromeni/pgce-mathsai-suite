@@ -75,3 +75,67 @@ def test_refresh_questions_calls_force_refresh(client, topic):
 def test_refresh_questions_invalid_difficulty_returns_422(client, topic):
     response = client.post(f"/api/questions/{topic.id}/NotATier/refresh")
     assert response.status_code == 422
+
+
+# --- Phase 9: status + reviewed workflow -----------------------------------
+
+STATUS_DICT = {
+    "topic_id": 1,
+    "difficulty": "Foundation",
+    "generated_at": "2026-01-01T00:00:00",
+    "model_used": ai_service.MODEL,
+    "reviewed": False,
+    "reviewed_at": None,
+}
+
+
+def test_get_questions_status_returns_metadata(client, topic):
+    with patch.object(cache_service, "get_questions_status", return_value={**STATUS_DICT, "topic_id": topic.id}):
+        response = client.get(f"/api/questions/{topic.id}/Foundation/status")
+
+    assert response.status_code == 200
+    assert response.json()["reviewed"] is False
+
+
+def test_get_questions_status_returns_null_when_not_cached(client, topic):
+    with patch.object(cache_service, "get_questions_status", return_value=None):
+        response = client.get(f"/api/questions/{topic.id}/Foundation/status")
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_get_questions_status_topic_not_found_returns_404(client):
+    with patch.object(
+        cache_service, "get_questions_status", side_effect=cache_service.TopicNotFoundError("nope")
+    ):
+        response = client.get("/api/questions/999/Foundation/status")
+
+    assert response.status_code == 404
+
+
+def test_mark_questions_reviewed_success(client, topic):
+    reviewed = {**STATUS_DICT, "topic_id": topic.id, "reviewed": True, "reviewed_at": "2026-01-02T00:00:00"}
+    with patch.object(cache_service, "mark_questions_reviewed", return_value=reviewed):
+        response = client.post(f"/api/questions/{topic.id}/Foundation/review")
+
+    assert response.status_code == 200
+    assert response.json()["reviewed"] is True
+
+
+def test_mark_questions_reviewed_not_cached_returns_404(client, topic):
+    with patch.object(
+        cache_service, "mark_questions_reviewed", side_effect=cache_service.ContentNotCachedError("nothing yet")
+    ):
+        response = client.post(f"/api/questions/{topic.id}/Foundation/review")
+
+    assert response.status_code == 404
+
+
+def test_mark_questions_reviewed_topic_not_found_returns_404(client):
+    with patch.object(
+        cache_service, "mark_questions_reviewed", side_effect=cache_service.TopicNotFoundError("nope")
+    ):
+        response = client.post("/api/questions/999/Foundation/review")
+
+    assert response.status_code == 404

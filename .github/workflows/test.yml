@@ -1,0 +1,42 @@
+name: Backend tests
+
+on:
+  push:
+    paths:
+      - "mathsai/backend/**"
+      - ".github/workflows/test.yml"
+  pull_request:
+    paths:
+      - "mathsai/backend/**"
+      - ".github/workflows/test.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mathsai/backend
+    env:
+      # Dummy value — the Anthropic client is always mocked in tests, so no
+      # real key or API cost is ever needed to run this suite.
+      ANTHROPIC_API_KEY: test-key-not-used
+      DATABASE_URL: sqlite:///./ci_test.db
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install WeasyPrint native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 \
+            libcairo2 libgdk-pixbuf-2.0-0 libffi8 shared-mime-info fonts-liberation
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        run: pytest

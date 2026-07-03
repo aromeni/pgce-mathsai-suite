@@ -30,6 +30,15 @@ export const getQuestions = (topicId, difficulty) =>
 export const refreshQuestions = (topicId, difficulty) =>
   client.post(`/questions/${topicId}/${difficulty}/refresh`).then((res) => res.data);
 
+export const getQuestionsStatus = (topicId, difficulty) =>
+  client.get(`/questions/${topicId}/${difficulty}/status`).then((res) => res.data);
+
+export const markQuestionsReviewed = (topicId, difficulty) =>
+  client.post(`/questions/${topicId}/${difficulty}/review`).then((res) => res.data);
+
+export const markLessonReviewed = (topicId) =>
+  client.post(`/lessons/${topicId}/review`).then((res) => res.data);
+
 export const getProgress = () => client.get("/progress").then((res) => res.data);
 
 export const getTopicProgress = (topicId) =>

@@ -1,6 +1,7 @@
 """Topic browsing and curriculum structure routes (CLAUDE.md API Routes —
 Topics Router)."""
 
+import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import LessonCache, Topic
 from schemas import TopicRead
+
+logger = logging.getLogger("mathsai")
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -71,6 +74,7 @@ def search_topics(q: str, db: Session = Depends(get_db)):
         .order_by(Topic.key_stage, Topic.strand, Topic.topic_name)
         .all()
     )
+    logger.info("Topic search q=%r results=%d", q, len(topics))
     cached_ids = _cached_lesson_topic_ids(db, [t.id for t in topics])
     return [_to_read(t, cached_ids) for t in topics]
 
@@ -90,6 +94,8 @@ def list_topics(db: Session = Depends(get_db)):
 def get_topic(topic_id: int, db: Session = Depends(get_db)):
     topic = db.query(Topic).filter(Topic.id == topic_id).first()
     if topic is None:
+        logger.error("Topic view failed: topic_id=%d not found endpoint=/api/topics/{id}", topic_id)
         raise HTTPException(status_code=404, detail=f"Topic {topic_id} not found")
+    logger.info("Topic viewed topic_id=%d", topic_id)
     cached_ids = _cached_lesson_topic_ids(db, [topic.id])
     return _to_read(topic, cached_ids)

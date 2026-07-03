@@ -30,3 +30,13 @@ def refresh_lesson(topic_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Topic {topic_id} not found")
     except AIGenerationError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.post("/{topic_id}/review", response_model=LessonRead)
+def mark_lesson_reviewed(topic_id: int, db: Session = Depends(get_db)):
+    try:
+        return cache_service.mark_lesson_reviewed(db, topic_id)
+    except cache_service.TopicNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Topic {topic_id} not found")
+    except cache_service.ContentNotCachedError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

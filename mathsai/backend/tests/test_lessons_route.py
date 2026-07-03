@@ -78,3 +78,33 @@ def test_refresh_lesson_generation_failure_returns_503(client, topic):
         response = client.post(f"/api/lessons/{topic.id}/refresh")
 
     assert response.status_code == 503
+
+
+# --- Phase 9: reviewed workflow --------------------------------------------
+
+
+def test_mark_lesson_reviewed_success(client, topic):
+    reviewed_dict = {**LESSON_DICT, "topic_id": topic.id, "reviewed": True, "reviewed_at": "2026-01-02T00:00:00"}
+    with patch.object(cache_service, "mark_lesson_reviewed", return_value=reviewed_dict):
+        response = client.post(f"/api/lessons/{topic.id}/review")
+
+    assert response.status_code == 200
+    assert response.json()["reviewed"] is True
+
+
+def test_mark_lesson_reviewed_topic_not_found_returns_404(client):
+    with patch.object(
+        cache_service, "mark_lesson_reviewed", side_effect=cache_service.TopicNotFoundError("nope")
+    ):
+        response = client.post("/api/lessons/999/review")
+
+    assert response.status_code == 404
+
+
+def test_mark_lesson_reviewed_not_cached_returns_404(client, topic):
+    with patch.object(
+        cache_service, "mark_lesson_reviewed", side_effect=cache_service.ContentNotCachedError("nothing yet")
+    ):
+        response = client.post(f"/api/lessons/{topic.id}/review")
+
+    assert response.status_code == 404

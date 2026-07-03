@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import ConfirmDialog from "../components/ConfirmDialog";
 import DifficultyBadge from "../components/DifficultyBadge";
 import QuestionBlock from "../components/QuestionBlock";
-import { exportQuestionsPdf, getQuestions, getTopic, refreshQuestions } from "../api/client";
+import ReviewedMarker from "../components/ReviewedMarker";
+import {
+  exportQuestionsPdf,
+  getQuestions,
+  getQuestionsStatus,
+  getTopic,
+  markQuestionsReviewed,
+  refreshQuestions,
+} from "../api/client";
 
 const DIFFICULTY_TIERS = ["Foundation", "Developing", "Extending"];
 
@@ -13,17 +22,21 @@ export default function Questions() {
 
   const [topic, setTopic] = useState(null);
   const [questions, setQuestions] = useState([]);
+  const [reviewStatus, setReviewStatus] = useState(null);
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [errorMessage, setErrorMessage] = useState("");
   const [regenerating, setRegenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [confirmRegenerateOpen, setConfirmRegenerateOpen] = useState(false);
+  const [markingReviewed, setMarkingReviewed] = useState(false);
 
   useEffect(() => {
     setStatus("loading");
-    Promise.all([getTopic(topicId), getQuestions(topicId, difficulty)])
-      .then(([topicData, questionsData]) => {
+    Promise.all([getTopic(topicId), getQuestions(topicId, difficulty), getQuestionsStatus(topicId, difficulty)])
+      .then(([topicData, questionsData, statusData]) => {
         setTopic(topicData);
         setQuestions(questionsData);
+        setReviewStatus(statusData);
         setStatus("ready");
       })
       .catch((err) => {
@@ -36,16 +49,29 @@ export default function Questions() {
       });
   }, [topicId, difficulty]);
 
-  const handleRegenerate = async () => {
-    if (!window.confirm("This will use API credits — continue?")) return;
+  const handleRegenerateConfirmed = async () => {
+    setConfirmRegenerateOpen(false);
     setRegenerating(true);
     try {
       const fresh = await refreshQuestions(topicId, difficulty);
       setQuestions(fresh);
+      setReviewStatus(await getQuestionsStatus(topicId, difficulty));
     } catch {
       window.alert("Regeneration failed — please try again shortly.");
     } finally {
       setRegenerating(false);
+    }
+  };
+
+  const handleMarkReviewed = async () => {
+    setMarkingReviewed(true);
+    try {
+      const updated = await markQuestionsReviewed(topicId, difficulty);
+      setReviewStatus(updated);
+    } catch {
+      window.alert("Couldn't mark this reviewed — please try again.");
+    } finally {
+      setMarkingReviewed(false);
     }
   };
 
@@ -84,9 +110,19 @@ export default function Questions() {
         &larr; Back to Lesson
       </Link>
 
-      <h1 className="mt-4 mb-6 font-display text-2xl font-bold text-text-primary">
+      <h1 className="mt-4 mb-3 font-display text-2xl font-bold text-text-primary">
         {topic.topic_name}
       </h1>
+
+      {reviewStatus && (
+        <div className="mb-4">
+          <ReviewedMarker
+            reviewed={reviewStatus.reviewed}
+            onMarkReviewed={handleMarkReviewed}
+            marking={markingReviewed}
+          />
+        </div>
+      )}
 
       <div className="mb-6 flex gap-2">
         {DIFFICULTY_TIERS.map((tier) => (
@@ -104,7 +140,7 @@ export default function Questions() {
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <button
-          onClick={handleRegenerate}
+          onClick={() => setConfirmRegenerateOpen(true)}
           disabled={regenerating}
           className="rounded border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
         >
@@ -125,6 +161,15 @@ export default function Questions() {
           <QuestionBlock key={q.question_number} question={q} />
         ))}
       </div>
+
+      <ConfirmDialog
+        open={confirmRegenerateOpen}
+        title="Regenerate questions?"
+        message="This will use API credits — continue?"
+        confirmLabel="Regenerate"
+        onConfirm={handleRegenerateConfirmed}
+        onCancel={() => setConfirmRegenerateOpen(false)}
+      />
     </div>
   );
 }

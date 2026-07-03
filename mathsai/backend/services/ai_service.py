@@ -110,12 +110,20 @@ Return only a valid JSON array. No preamble, no markdown fences.
 """
 
 
-def _call_with_retry(system: str, user_prompt: str) -> str:
+def _call_with_retry(system: str, user_prompt: str, log_context: Optional[dict] = None) -> str:
     """Call the Anthropic API with a 30s timeout, retrying once on
     timeout/429/5xx with a short backoff. Raises AIGenerationError if both
-    attempts fail."""
+    attempts fail.
+
+    Logs request metadata on success — topic_id, difficulty, duration,
+    token count (CLAUDE.md Production Hardening — Logging) — never the
+    request/response bodies themselves, which could carry the API key in
+    headers if ever logged at a lower level.
+    """
     client = _get_client()
     last_exc: Optional[Exception] = None
+    context = log_context or {}
+    start = time.monotonic()
 
     for attempt in range(2):
         try:
@@ -126,14 +134,27 @@ def _call_with_retry(system: str, user_prompt: str) -> str:
                 system=system,
                 messages=[{"role": "user", "content": user_prompt}],
             )
+            duration = time.monotonic() - start
+            usage = getattr(response, "usage", None)
+            logger.info(
+                "AI generation succeeded topic_id=%s difficulty=%s duration=%.2fs "
+                "input_tokens=%s output_tokens=%s",
+                context.get("topic_id"),
+                context.get("difficulty"),
+                duration,
+                getattr(usage, "input_tokens", "unknown"),
+                getattr(usage, "output_tokens", "unknown"),
+            )
             return "".join(
                 block.text for block in response.content if block.type == "text"
             ).strip()
         except (APITimeoutError, RateLimitError, APIStatusError) as exc:
             last_exc = exc
             logger.error(
-                "AI generation attempt %d failed: %s: %s",
+                "AI generation attempt %d failed topic_id=%s difficulty=%s: %s: %s",
                 attempt + 1,
+                context.get("topic_id"),
+                context.get("difficulty"),
                 type(exc).__name__,
                 exc,
             )
@@ -158,22 +179,34 @@ def _parse_json(raw_text: str) -> Any:
         raise AIGenerationError(f"AI returned invalid JSON: {exc}") from exc
 
 
-def generate_lesson(key_stage: str, topic_name: str, edexcel_ref: Optional[str]) -> dict:
+def generate_lesson(
+    key_stage: str,
+    topic_name: str,
+    edexcel_ref: Optional[str],
+    topic_id: Optional[int] = None,
+) -> dict:
     """Generate a lesson package for one topic. Returns parsed JSON (dict).
-    Raises AIGenerationError on repeated API failure or invalid JSON."""
+    Raises AIGenerationError on repeated API failure or invalid JSON.
+    `topic_id` is optional and used only for log context."""
     user_prompt = LESSON_USER_PROMPT_TEMPLATE.format(
         key_stage=key_stage,
         topic_name=topic_name,
         edexcel_ref=edexcel_ref or "N/A",
     )
-    raw = _call_with_retry(SYSTEM_PROMPT, user_prompt)
+    raw = _call_with_retry(SYSTEM_PROMPT, user_prompt, log_context={"topic_id": topic_id})
     return _parse_json(raw)
 
 
-def generate_questions(key_stage: str, topic_name: str, difficulty: str) -> list:
+def generate_questions(
+    key_stage: str,
+    topic_name: str,
+    difficulty: str,
+    topic_id: Optional[int] = None,
+) -> list:
     """Generate 6 questions for one topic/difficulty tier. Returns parsed
     JSON (list). Raises AIGenerationError on repeated API failure, invalid
-    JSON, or an unknown difficulty tier."""
+    JSON, or an unknown difficulty tier. `topic_id` is optional and used
+    only for log context."""
     if difficulty not in TIER_DEFINITIONS:
         raise ValueError(
             f"Invalid difficulty tier '{difficulty}'. "
@@ -185,5 +218,7 @@ def generate_questions(key_stage: str, topic_name: str, difficulty: str) -> list
         difficulty=difficulty,
         tier_definition=TIER_DEFINITIONS[difficulty],
     )
-    raw = _call_with_retry(SYSTEM_PROMPT, user_prompt)
+    raw = _call_with_retry(
+        SYSTEM_PROMPT, user_prompt, log_context={"topic_id": topic_id, "difficulty": difficulty}
+    )
     return _parse_json(raw)
