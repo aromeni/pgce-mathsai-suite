@@ -4,7 +4,7 @@ Automated KS3/KS4 Edexcel mathematics teaching system for a single teacher — l
 
 This README is a stub that will grow with each implementation phase (see `CLAUDE.md` for the full 9-phase roadmap).
 
-## Status: Phase 5 — Lesson and Questions UI
+## Status: Phase 6 — Progress Tracking
 
 Implemented:
 - FastAPI backend skeleton with SQLAlchemy models for all five tables (`topics`, `lesson_cache`, `question_cache`, `teaching_log`, `regeneration_log`)
@@ -20,11 +20,12 @@ Implemented:
 - **Frontend** — Vite + React 19 + Tailwind v3 + React Router, styled to CLAUDE.md's dark palette (`#0d0d14` background, `#00d4b8` teal accent, Syne headings, DM Mono body). `Dashboard.jsx` fetches `/api/topics` + `/api/progress` and renders a KS3/KS4 toggle, a strand filter derived from the loaded data, and a topic-card grid grouped by strand — each card shows the taught tick and cached-lesson bolt icon and links to `/lesson/:id`. The Vite dev server proxies `/api` to the backend so the client never needs backend CORS config (deferred to Phase 8 as planned).
 - **`Lesson.jsx`** — full lesson package view: topic header (key stage/strand/Edexcel ref), three tabs (Lesson Notes rendered as markdown via `react-markdown` plus a structured Worked Examples section, Key Vocabulary table, Common Errors cards), the three difficulty-tier buttons that route to `/questions/:topicId/:tier`, a Regenerate button (gated by a `window.confirm` credit-spend warning — the full `regeneration_log` audit trail + polished confirmation modal is Phase 9 scope, this is a minimal placeholder against accidental clicks in the meantime), and an inline Mark as Taught form (class label + date) that posts to `/api/progress`. If the API returns `stale: true` (the Phase 2 stale-cache fallback), a small amber note surfaces this rather than silently presenting old content as fresh.
 - **`Questions.jsx`** — difficulty-tier tabs (`DifficultyBadge` component, tier-coloured per CLAUDE.md), each question rendered via `QuestionBlock` with a type badge, marks, and a Show Answer toggle that reveals the answer + mark scheme. A disabled, clearly-labelled "Export to PDF" button flags that PDF export is Phase 7 work rather than silently omitting the button CLAUDE.md's spec calls for.
-- **Progress.jsx UI** remains a stub — the backend API is complete (Phase 3), but the Progress page/taught-indicator UI is Phase 6 as planned.
+- **`Progress.jsx`** — full teaching history table: date, topic (linking back to `/lesson/:id`), key stage, strand, class label, notes, and a Remove action against `DELETE /api/progress/{id}`. Key stage and strand filters are derived from the logged entries' joined topic data (topics are fetched separately and joined client-side by `topic_id`, since `TeachingLogRead` only carries `topic_id`) — strand options cascade from the selected key stage, same pattern as the Dashboard's sidebar filter. The taught-tick indicator on `TopicCard` was already wired in Phase 4 via the same `getProgress()` call, so no change was needed there.
+- Added a slim top nav bar (`Dashboard` / `Progress` links) to `App.jsx` — Phase 4/5 had no way to actually reach `/progress` in the browser, since only a direct URL or the (until now nonexistent) nav link could get there.
 
 **Export router remains a placeholder** — deferred to Phase 7, since it genuinely needs `weasyprint`/`reportlab`, which aren't installed yet.
 
-Not yet implemented: Progress page UI, Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase-by-phase plan.
+Not yet implemented: Docker, auth, PDF export, CI. See `CLAUDE.md` for the phase-by-phase plan.
 
 ## Tech stack
 
