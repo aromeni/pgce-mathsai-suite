@@ -2,8 +2,8 @@
 
 ## Project Identity
 
-**Project name:** MathsAI  
-**Owner:** Abdul Rashid Omeni — AI Engineer & PGCE Mathematics Trainee  
+**Project name:** MathsAI
+**Owner:** Rashid Rashid — AI Engineer & PGCE Mathematics Trainee
 **Purpose:** A teacher-facing web application that automates lesson planning, resource generation, and question creation for KS3 and KS4 mathematics, following the Edexcel curriculum. AI-generated content is cached to minimise API usage. The system is deployable both locally and online.
 
 ---
@@ -12,13 +12,13 @@
 
 This is a plan-mode task. Before writing a single line of code, produce a full architectural plan covering:
 
-1. Directory structure  
-2. Technology stack with justification  
-3. Database schema (SQLite)  
-4. API route design  
-5. Frontend component map  
-6. Caching strategy  
-7. AI integration design  
+1. Directory structure
+2. Technology stack with justification
+3. Database schema (SQLite)
+4. API route design
+5. Frontend component map
+6. Caching strategy
+7. AI integration design
 8. Deployment approach
 
 Wait for approval of the plan before proceeding to implementation. Build in clearly labelled phases. Do not combine phases. State assumptions explicitly.
@@ -29,12 +29,12 @@ Wait for approval of the plan before proceeding to implementation. Build in clea
 
 MathsAI is a single-teacher tool. The teacher (Abdul) uses it to:
 
-- Browse KS3 and KS4 Edexcel mathematics topics via a structured dashboard  
-- Select a topic and automatically generate a full lesson package  
-- View and edit lesson notes, explanations, and worked examples  
-- Generate three tiers of practice questions (Foundation, Developing, Extending) with answers  
-- Track which topics have been taught and when  
-- Export lesson content and questions to PDF or printable format  
+- Browse KS3 and KS4 Edexcel mathematics topics via a structured dashboard
+- Select a topic and automatically generate a full lesson package
+- View and edit lesson notes, explanations, and worked examples
+- Generate three tiers of practice questions (Foundation, Developing, Extending) with answers
+- Track which topics have been taught and when
+- Export lesson content and questions to PDF or printable format
 - All AI-generated content is cached in SQLite so it is never regenerated unnecessarily
 
 ---
@@ -43,16 +43,16 @@ MathsAI is a single-teacher tool. The teacher (Abdul) uses it to:
 
 Use the following stack. Do not deviate without flagging a reason.
 
-**Backend:** Python 3.11+ with FastAPI  
-**Database:** SQLite via SQLAlchemy ORM (no external DB server required)  
-**AI Integration:** Anthropic Python SDK (`anthropic`) using `claude-sonnet-4-6`  
-**Frontend:** Single-page React application (Vite \+ React 18\)  
-**Styling:** Tailwind CSS with a clean, dark professional aesthetic — dark charcoal background, teal accent (`#00d4b8`), mono font for content areas  
-**PDF Export:** `weasyprint` or `reportlab` for server-side PDF generation  
-**Caching:** SQLite-backed cache — generated content is stored on first generation and retrieved on subsequent requests, never regenerated unless explicitly refreshed  
-**Deployment:** Runs locally via `uvicorn`. Can be deployed to Railway, Render, or Fly.io with minimal change, or kept private via Tailscale — decided explicitly in Phase 8, see Production Hardening. Include a `Dockerfile` from the start.  
-**Testing:** `pytest` \+ FastAPI's `TestClient`, with the Anthropic client mocked via `unittest.mock`  
-**Migrations:** Alembic, from the first schema version onward  
+**Backend:** Python 3.11+ with FastAPI
+**Database:** SQLite via SQLAlchemy ORM (no external DB server required)
+**AI Integration:** Anthropic Python SDK (`anthropic`) using `claude-sonnet-4-6`
+**Frontend:** Single-page React application (Vite \+ React 18\)
+**Styling:** Tailwind CSS with a clean, dark professional aesthetic — dark charcoal background, teal accent (`#00d4b8`), mono font for content areas
+**PDF Export:** `weasyprint` or `reportlab` for server-side PDF generation
+**Caching:** SQLite-backed cache — generated content is stored on first generation and retrieved on subsequent requests, never regenerated unless explicitly refreshed
+**Deployment:** Runs locally via `uvicorn`. Can be deployed to Railway, Render, or Fly.io with minimal change, or kept private via Tailscale — decided explicitly in Phase 8, see Production Hardening. Include a `Dockerfile` from the start.
+**Testing:** `pytest` \+ FastAPI's `TestClient`, with the Anthropic client mocked via `unittest.mock`
+**Migrations:** Alembic, from the first schema version onward
 **Logging:** Python's standard `logging` module with a rotating file handler
 
 ---
@@ -263,105 +263,105 @@ Seed the `topics` table on first run using the following taxonomy. This is stati
 
 **Number**
 
-- Place value and ordering  
-- Addition and subtraction  
-- Multiplication and division  
-- Fractions  
-- Decimals  
-- Percentages  
-- Ratio and proportion  
-- Powers and roots  
-- Order of operations (BIDMAS)  
+- Place value and ordering
+- Addition and subtraction
+- Multiplication and division
+- Fractions
+- Decimals
+- Percentages
+- Ratio and proportion
+- Powers and roots
+- Order of operations (BIDMAS)
 - Negative numbers
 
 **Algebra**
 
-- Introduction to algebra (expressions and terms)  
-- Simplifying expressions  
-- Expanding brackets  
-- Factorising  
-- Solving linear equations  
-- Sequences (term-to-term and nth term)  
-- Coordinates and straight-line graphs  
+- Introduction to algebra (expressions and terms)
+- Simplifying expressions
+- Expanding brackets
+- Factorising
+- Solving linear equations
+- Sequences (term-to-term and nth term)
+- Coordinates and straight-line graphs
 - Substitution
 
 **Geometry and Measures**
 
-- Angles (types, rules, parallel lines)  
-- Properties of 2D shapes  
-- Properties of 3D shapes  
-- Perimeter and area  
-- Volume and surface area  
-- Transformations (reflection, rotation, translation, enlargement)  
-- Symmetry  
-- Constructions and loci  
-- Pythagoras' theorem (introduction)  
+- Angles (types, rules, parallel lines)
+- Properties of 2D shapes
+- Properties of 3D shapes
+- Perimeter and area
+- Volume and surface area
+- Transformations (reflection, rotation, translation, enlargement)
+- Symmetry
+- Constructions and loci
+- Pythagoras' theorem (introduction)
 - Units and measurement
 
 **Statistics and Probability**
 
-- Collecting and organising data  
-- Bar charts, pie charts, pictograms  
-- Mean, median, mode and range  
-- Scatter graphs and correlation  
-- Basic probability  
+- Collecting and organising data
+- Bar charts, pie charts, pictograms
+- Mean, median, mode and range
+- Scatter graphs and correlation
+- Basic probability
 - Frequency tables and two-way tables
 
 ### KS4 Topics (Year 10–11) — Edexcel GCSE
 
 **Number**
 
-- Indices and surds  
-- Standard form  
-- Bounds and error intervals  
-- Fractions (complex operations)  
-- Percentage change, reverse percentage  
-- Ratio and proportion (advanced)  
+- Indices and surds
+- Standard form
+- Bounds and error intervals
+- Fractions (complex operations)
+- Percentage change, reverse percentage
+- Ratio and proportion (advanced)
 - Recurring decimals
 
 **Algebra**
 
-- Expanding and factorising (advanced)  
-- Quadratic equations (factorising, formula, completing the square)  
-- Simultaneous equations  
-- Inequalities  
-- nth term of quadratic sequences  
-- Functions and function notation  
-- Graph transformations  
-- Linear and quadratic graphs  
-- Cubic and reciprocal graphs  
-- Real-life graphs  
-- Iteration  
+- Expanding and factorising (advanced)
+- Quadratic equations (factorising, formula, completing the square)
+- Simultaneous equations
+- Inequalities
+- nth term of quadratic sequences
+- Functions and function notation
+- Graph transformations
+- Linear and quadratic graphs
+- Cubic and reciprocal graphs
+- Real-life graphs
+- Iteration
 - Algebraic proof
 
 **Ratio, Proportion and Rates of Change**
 
-- Direct and inverse proportion  
-- Compound measures (speed, density, pressure)  
-- Growth and decay  
+- Direct and inverse proportion
+- Compound measures (speed, density, pressure)
+- Growth and decay
 - Rates of change from graphs
 
 **Geometry and Measures**
 
-- Circle theorems  
-- Arc length and sector area  
-- Pythagoras in 3D  
-- Trigonometry (SOHCAHTOA)  
-- Sine and cosine rules  
-- Vectors  
-- Congruence and similarity  
-- Plans and elevations  
-- Surface area and volume (advanced)  
+- Circle theorems
+- Arc length and sector area
+- Pythagoras in 3D
+- Trigonometry (SOHCAHTOA)
+- Sine and cosine rules
+- Vectors
+- Congruence and similarity
+- Plans and elevations
+- Surface area and volume (advanced)
 - Bearings
 
 **Probability and Statistics**
 
-- Venn diagrams and set notation  
-- Tree diagrams  
-- Conditional probability  
-- Cumulative frequency and box plots  
-- Histograms  
-- Sampling methods  
+- Venn diagrams and set notation
+- Tree diagrams
+- Conditional probability
+- Cumulative frequency and box plots
+- Histograms
+- Sampling methods
 - Averages from grouped frequency tables
 
 ---
@@ -398,13 +398,13 @@ Return your response as a valid JSON object with exactly this structure:
 
     {
 
-      "title": "Example 1 — \[description\]",
+    "title": "Example 1 —\[description\]",
 
-      "problem": "...",
+    "problem": "...",
 
-      "solution": "Step-by-step solution with working shown",
+    "solution": "Step-by-step solution with working shown",
 
-      "teaching\_note": "What the teacher should draw attention to"
+    "teaching\_note": "What the teacher should draw attention to"
 
     }
 
@@ -432,8 +432,8 @@ Generate questions for a specific topic and difficulty tier. Store in `question_
 
 **Difficulty tier definitions to include in the prompt:**
 
-- Foundation: straightforward single-step questions testing basic recall and application  
-- Developing: two or three step questions requiring method selection  
+- Foundation: straightforward single-step questions testing basic recall and application
+- Developing: two or three step questions requiring method selection
 - Extending: multi-step, exam-style questions requiring reasoning, proof, or problem-solving
 
 **User prompt template:**
@@ -570,31 +570,31 @@ GET  /api/export/questions/{topic\_id}/pdf \# Export all three tiers as PDF
 
 This is the main view. It shows:
 
-- A sidebar with KS3 / KS4 toggle and strand filter (Number, Algebra, Geometry, Statistics)  
-- A main grid of topic cards  
-- Each topic card shows: topic name, key stage badge, strand, whether it has been taught (green tick), whether content is cached (blue lightning bolt icon)  
+- A sidebar with KS3 / KS4 toggle and strand filter (Number, Algebra, Geometry, Statistics)
+- A main grid of topic cards
+- Each topic card shows: topic name, key stage badge, strand, whether it has been taught (green tick), whether content is cached (blue lightning bolt icon)
 - Clicking a topic card navigates to the Lesson page for that topic
 
 ### Lesson Page (`Lesson.jsx`)
 
 This view shows the full lesson package for a selected topic. Layout:
 
-- Top: topic name, key stage, strand, Edexcel reference  
-- Tab 1 — Lesson Notes: rendered markdown with learning objectives, explanation, worked examples  
-- Tab 2 — Key Vocabulary: term/definition pairs in a clean table  
-- Tab 3 — Common Errors: misconception cards with correction  
-- Bottom bar: three buttons — Foundation Questions / Developing Questions / Extending Questions — each navigates to the Questions page with that tier selected  
-- A "Regenerate" button that calls the force\_refresh endpoint  
+- Top: topic name, key stage, strand, Edexcel reference
+- Tab 1 — Lesson Notes: rendered markdown with learning objectives, explanation, worked examples
+- Tab 2 — Key Vocabulary: term/definition pairs in a clean table
+- Tab 3 — Common Errors: misconception cards with correction
+- Bottom bar: three buttons — Foundation Questions / Developing Questions / Extending Questions — each navigates to the Questions page with that tier selected
+- A "Regenerate" button that calls the force\_refresh endpoint
 - A "Mark as Taught" button that logs the topic
 
 ### Questions Page (`Questions.jsx`)
 
 Shows questions for the selected topic and difficulty tier.
 
-- Difficulty selector at the top (three tabs: Foundation / Developing / Extending)  
-- Each question displayed in a clean card showing: question number, type badge, question text, marks  
-- An "Show Answer" toggle per question that reveals the answer and mark scheme  
-- A "Regenerate Questions" button  
+- Difficulty selector at the top (three tabs: Foundation / Developing / Extending)
+- Each question displayed in a clean card showing: question number, type badge, question text, marks
+- An "Show Answer" toggle per question that reveals the answer and mark scheme
+- A "Regenerate Questions" button
 - Export to PDF button
 
 ### Progress Page (`Progress.jsx`)
@@ -607,19 +607,19 @@ A simple table showing all topics that have been logged as taught, with date and
 
 Follow these design rules precisely.
 
-Background: `#0d0d14` (near-black)  
-Surface: `#13131e`  
-Border: `rgba(255,255,255,0.07)`  
-Accent: `#00d4b8` (teal)  
-Text primary: `#e8e8f0`  
-Text secondary: `#7070a0`  
-Font: `DM Mono` for content and code areas, `Syne` for headings  
+Background: `#0d0d14` (near-black)
+Surface: `#13131e`
+Border: `rgba(255,255,255,0.07)`
+Accent: `#00d4b8` (teal)
+Text primary: `#e8e8f0`
+Text secondary: `#7070a0`
+Font: `DM Mono` for content and code areas, `Syne` for headings
 Import both from Google Fonts.
 
 Difficulty tier colours:
 
-- Foundation: `#4ade80` (green)  
-- Developing: `#facc15` (amber)  
+- Foundation: `#4ade80` (green)
+- Developing: `#facc15` (amber)
 - Extending: `#f87171` (red)
 
 All cards should have subtle hover states. No excessive animation. Clean, information-dense, professional.
@@ -670,16 +670,16 @@ Implement the rest of the Production Hardening section in full: retries and time
 
 ## Code Quality Requirements
 
-- All Python follows PEP 8\.  
-- All API responses use consistent Pydantic schemas.  
-- Database sessions use dependency injection via FastAPI `Depends`.  
-- All AI prompts are defined as constants or templates in `ai_service.py`, never hardcoded inline in routes.  
-- SQLite WAL mode should be enabled for better concurrent read performance.  
-- Environment variables used for: `ANTHROPIC_API_KEY`, `DATABASE_URL`, `ENVIRONMENT`, and `APP_PASSWORD_HASH` if public hosting is chosen over Tailscale (see Production Hardening).  
-- Use `python-dotenv` for local `.env` loading.  
-- Include a `.env.example` file.  
-- All JSON stored in SQLite TEXT fields must be validated on write and parsed on read.  
-- Frontend API calls all go through `api/client.js` — no raw fetch calls scattered through components.  
+- All Python follows PEP 8\.
+- All API responses use consistent Pydantic schemas.
+- Database sessions use dependency injection via FastAPI `Depends`.
+- All AI prompts are defined as constants or templates in `ai_service.py`, never hardcoded inline in routes.
+- SQLite WAL mode should be enabled for better concurrent read performance.
+- Environment variables used for: `ANTHROPIC_API_KEY`, `DATABASE_URL`, `ENVIRONMENT`, and `APP_PASSWORD_HASH` if public hosting is chosen over Tailscale (see Production Hardening).
+- Use `python-dotenv` for local `.env` loading.
+- Include a `.env.example` file.
+- All JSON stored in SQLite TEXT fields must be validated on write and parsed on read.
+- Frontend API calls all go through `api/client.js` — no raw fetch calls scattered through components.
 - React components should be clean and single-purpose. No component should exceed 200 lines.
 
 ---
@@ -688,11 +688,11 @@ Implement the rest of the Production Hardening section in full: retries and time
 
 Handle the following cases explicitly:
 
-- Anthropic API rate limit or timeout → return 503 with a clear message, do not crash  
-- Topic not found → return 404  
-- Invalid difficulty tier → return 422 with validation error  
-- Cache read failure → fall through to regeneration, log the error  
-- PDF generation failure → return 500 with detail  
+- Anthropic API rate limit or timeout → return 503 with a clear message, do not crash
+- Topic not found → return 404
+- Invalid difficulty tier → return 422 with validation error
+- Cache read failure → fall through to regeneration, log the error
+- PDF generation failure → return 500 with detail
 - Empty question response from AI → retry once, then return error
 
 ---
@@ -715,17 +715,17 @@ State which path is being taken as part of the Phase 8 plan, and implement only 
 
 `ANTHROPIC_API_KEY` never reaches the frontend bundle or a client-visible request — this already follows from all Anthropic calls living in `ai_service.py`. In addition:
 
-- `.env` is in `.gitignore` from the first commit, not added retroactively once something has already leaked into history.  
-- `.env.example` lists variable names with placeholder values only.  
-- If public hosting is chosen, the key is set via the platform's own secret manager, never committed.  
+- `.env` is in `.gitignore` from the first commit, not added retroactively once something has already leaked into history.
+- `.env.example` lists variable names with placeholder values only.
+- If public hosting is chosen, the key is set via the platform's own secret manager, never committed.
 - Logs capture request metadata (topic\_id, difficulty, duration, token count) — never full request/response bodies, which could contain the key in headers.
 
 ### Resilience: retries, timeouts, and graceful degradation
 
 Handle all of this inside `ai_service.py`, not scattered across routes:
 
-- Every Anthropic call gets a timeout (30s is reasonable for one generation) and one retry with a short backoff on timeout or a 429/5xx — not more than one; a teacher waiting on a lesson to load should see a fast, clear failure, not a silent minute-long retry loop.  
-- On repeated failure, return a 503 with a plain-language message ("Generation temporarily unavailable — please try again shortly"), never a raw stack trace.  
+- Every Anthropic call gets a timeout (30s is reasonable for one generation) and one retry with a short backoff on timeout or a 429/5xx — not more than one; a teacher waiting on a lesson to load should see a fast, clear failure, not a silent minute-long retry loop.
+- On repeated failure, return a 503 with a plain-language message ("Generation temporarily unavailable — please try again shortly"), never a raw stack trace.
 - If regeneration fails but a stale cached version already exists, serve the stale version rather than an error, with a small UI note ("Last generated \[date\] — refresh failed, showing previous version"). An outdated lesson is more useful mid-planning than a blank screen.
 
 ### Validating AI output — and being honest about what validation can't catch
@@ -752,9 +752,9 @@ Python's `logging` module with a rotating file handler, not `print()`. `INFO` fo
 
 Proportionate to a single-user tool, not exhaustive:
 
-- Unit tests for `cache_service.py` covering cache hit, cache miss, force-refresh, and validation-failure-retry paths, with the Anthropic client mocked — never call the real API in tests.  
-- Integration tests per router via FastAPI's `TestClient`, covering the happy path and the documented error cases (topic not found, invalid difficulty).  
-- No frontend test suite is required at this scale; the manual per-phase verification already specified in Implementation Phases is sufficient there.  
+- Unit tests for `cache_service.py` covering cache hit, cache miss, force-refresh, and validation-failure-retry paths, with the Anthropic client mocked — never call the real API in tests.
+- Integration tests per router via FastAPI's `TestClient`, covering the happy path and the documented error cases (topic not found, invalid difficulty).
+- No frontend test suite is required at this scale; the manual per-phase verification already specified in Implementation Phases is sufficient there.
 - A minimal `.github/workflows/test.yml` running `pytest` on push, using a dummy `ANTHROPIC_API_KEY` value so mocked tests run in CI without a real key or cost.
 
 ### Database migrations and backups
@@ -777,20 +777,20 @@ CORS in `main.py` allows only the known frontend origin(s) — never `*`. A `GET
 
 The `README.md` must include:
 
-1. What MathsAI is and what it does  
-2. Tech stack overview  
-3. Local setup instructions (clone, install, `.env`, seed, run)  
-4. Docker setup instructions  
-5. Deployment instructions for Railway or Render  
-6. API route reference  
-7. How to force-refresh cached content  
-8. How to add new curriculum topics  
-9. Network access setup — Tailscale instructions, or password auth setup if public hosting was chosen  
-10. How to run the test suite locally and in CI  
+1. What MathsAI is and what it does
+2. Tech stack overview
+3. Local setup instructions (clone, install, `.env`, seed, run)
+4. Docker setup instructions
+5. Deployment instructions for Railway or Render
+6. API route reference
+7. How to force-refresh cached content
+8. How to add new curriculum topics
+9. Network access setup — Tailscale instructions, or password auth setup if public hosting was chosen
+10. How to run the test suite locally and in CI
 11. How database migrations work (Alembic commands: revision, upgrade, downgrade) and the backup step to take before running one
 
 ---
 
 ## Final Note to Claude Code
 
-This system is being built by an AI Engineer with a First Class BEng in Software Engineering and a Distinction MSc in AI who is also training to be a secondary mathematics teacher. He understands the code deeply and will review every decision. Do not cut corners, do not skip error handling, do not produce placeholder stubs without flagging them clearly. Build it properly from the start. Ask before assuming on anything architectural. Surface trade-offs where they exist.  
+This system is being built by an AI Engineer with a First Class BEng in Software Engineering and a Distinction MSc in AI who is also training to be a secondary mathematics teacher. He understands the code deeply and will review every decision. Do not cut corners, do not skip error handling, do not produce placeholder stubs without flagging them clearly. Build it properly from the start. Ask before assuming on anything architectural. Surface trade-offs where they exist.
