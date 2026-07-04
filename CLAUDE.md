@@ -91,6 +91,10 @@ mathsai/
 
 │   │   ├── cache\_service.py     \# Cache read/write logic
 
+│   │   ├── improvement\_agent.py \# Proposes revisions to existing content — never writes
+
+│   │   │                        \# to lesson\_cache/question\_cache directly (Phase 10)
+
 │   │   └── curriculum.py        \# Edexcel KS3/KS4 topic taxonomy (static data)
 
 │   └── requirements.txt
@@ -109,7 +113,9 @@ mathsai/
 
 │   │   │   ├── Questions.jsx    \# Question display by difficulty tier
 
-│   │   │   └── Progress.jsx     \# Teaching history tracker
+│   │   │   ├── Progress.jsx     \# Teaching history tracker
+
+│   │   │   └── Suggestions.jsx  \# Pending content-revision suggestions (Phase 10)
 
 │   │   ├── components/
 
@@ -252,6 +258,46 @@ topic\_id        INTEGER FK → topics.id
 content\_type    TEXT NOT NULL          \-- 'lesson' or 'question:\<difficulty\>'
 
 timestamp       DATETIME NOT NULL
+
+### Table: `content_feedback`
+
+Captures a signal that existing cached content might need revisiting. Written by the frontend when an edit is saved, by the teacher after a lesson, or manually when a spec change is noticed. Never triggers a change by itself — it's raw material for the improvement agent to read.
+
+id              INTEGER PRIMARY KEY
+
+topic\_id        INTEGER FK → topics.id
+
+content\_type    TEXT NOT NULL          \-- 'lesson' or 'question:\<difficulty\>'
+
+signal\_type     TEXT NOT NULL          \-- 'edit\_diff' | 'post\_lesson\_note' | 'spec\_drift' | 'self\_critique'
+
+payload         TEXT NOT NULL          \-- JSON, shape depends on signal\_type — see Improvement Agent
+
+created\_at      DATETIME NOT NULL
+
+### Table: `suggested_revisions`
+
+What the improvement agent proposes in response to feedback. Never applied automatically — see Improvement Agent for why.
+
+id                      INTEGER PRIMARY KEY
+
+topic\_id                INTEGER FK → topics.id
+
+content\_type            TEXT NOT NULL          \-- 'lesson' or 'question:\<difficulty\>'
+
+triggering\_feedback\_id  INTEGER FK → content\_feedback.id (nullable — a suggestion can be
+
+                                                            general, not tied to one signal)
+
+proposed\_content        TEXT NOT NULL          \-- JSON, same shape as lesson\_cache/question\_cache
+
+rationale               TEXT NOT NULL          \-- plain-English explanation of the proposed change
+
+status                  TEXT NOT NULL DEFAULT 'pending'   \-- 'pending' | 'accepted' | 'rejected'
+
+created\_at              DATETIME NOT NULL
+
+resolved\_at             DATETIME
 
 ---
 
@@ -438,7 +484,7 @@ Generate questions for a specific topic and difficulty tier. Store in `question_
 
 **User prompt template:**
 
-Generate 6 mathematics questions for the following:
+Generate 10 mathematics questions for the following:
 
 Key Stage: {key\_stage}
 
@@ -518,6 +564,72 @@ def get\_questions(topic\_id: int, difficulty: str, force\_refresh: bool \= Fals
 
 ---
 
+## Improvement Agent
+
+This is additive, not a replacement for anything above. `ai_service.py` still owns first-generation of content from a bare topic; this module owns proposing *changes* to content that already exists and is (or was) reviewed. Keep them separate files — they have different inputs, different prompts, and different consequences if they go wrong.
+
+### The constraint this design exists to satisfy
+
+The `reviewed` flag means "a qualified maths teacher has personally checked this." An agent that edits cached content on its own authority, however well-intentioned, breaks that guarantee silently — content marked reviewed would no longer be what was reviewed. So the rule is absolute: this module never writes to `lesson_cache` or `question_cache`. It only ever writes to `suggested_revisions`. The only path from a suggestion to live content is a human clicking Accept.
+
+### Where signals come from
+
+Four `signal_type` values, each with its own `payload` shape in `content_feedback`:
+
+`edit_diff` — logged automatically whenever a teacher edits AI-generated content before use. Payload: `{"field": "lesson_notes", "before": "...", "after": "..."}`. This is the strongest signal available, because it's not a guess about what's wrong — it's a direct record of what you personally changed. **Note: this depends on an in-place content-editing UI that does not exist yet in `Lesson.jsx`/`Questions.jsx` (those pages currently display and regenerate, not edit) — building that editing capability is a prerequisite for this signal type, not a detail to defer.**
+
+`post_lesson_note` — an optional free-text prompt after a `teaching_log` entry: did anything land badly, need more scaffolding than expected, or cause confusion? Payload: `{"note": "...", "class_label": "..."}`.
+
+`spec_drift` — logged manually when Edexcel updates a specification or publishes new sample assessment material. Payload: `{"description": "...", "source_url": "..."}`.
+
+`self_critique` — a confidence/concern field the model emits as part of its *original* generation response (never a separate follow-up call — a second "double-check yourself" call repeats the exact self-verification weakness described in Production Hardening — Validating AI output, at extra cost, for no reliability gain). Payload: `{"concern": "...", "confidence": "low|medium|high"}`. Treat this one as the weakest signal of the four — it triages what to look at first, it does not verify anything.
+
+### What the agent does with a signal
+
+def generate\_suggestion(topic\_id: int, content\_type: str, feedback\_id: int | None \= None) \-\> dict:
+
+    \# 1\. Load the current cached content for (topic\_id, content\_type) — this must
+
+    \#    already exist; there is nothing to improve on a topic that's never been generated
+
+    \# 2\. Load the triggering feedback row if feedback\_id is given, otherwise load all
+
+    \#    unresolved content\_feedback rows for this (topic\_id, content\_type)
+
+    \# 3\. Build a prompt that explicitly frames this as revision, not regeneration:
+
+    \#    "Here is the existing reviewed content. Here is a signal suggesting a gap.
+
+    \#     Propose a specific, targeted change and explain your reasoning. Do not
+
+    \#     rewrite what isn't implicated by the signal."
+
+    \# 4\. Validate the proposed JSON against the same LessonSchema / QuestionSetSchema
+
+    \#    used in ai\_service.py — reuse those models, don't redefine them
+
+    \# 5\. Write a row to suggested\_revisions with status='pending'
+
+    \# 6\. Return the created row
+
+The prompt instruction in step 3 matters more than it looks — a generic "regenerate this topic" prompt will happily rewrite parts that were already fine, which defeats the point of showing a focused diff for review. Constrain it explicitly to the signal.
+
+### Accepting or rejecting a suggestion
+
+POST /api/suggestions/{id}/accept
+
+POST /api/suggestions/{id}/reject
+
+Reject: set `status='rejected'`, `resolved_at=now`. No other effect.
+
+Accept: copy `proposed_content` into the relevant cache table, set `status='accepted'`, `resolved_at=now` — and set the cache row's `reviewed` back to `false`, not `true`. This is deliberate, not an oversight: accepting means "this direction looks right," reviewing means "I have personally checked this is classroom-ready," and those are different judgements made at different moments. Collapsing them would let a suggestion reach `reviewed=true` status without the actual check the flag exists to represent. Also write a row to `regeneration_log` with `content_type` suffixed `:agent-suggested`, so the audit trail distinguishes an agent-driven change from a manual `force_refresh` at a glance.
+
+### Trigger: on-demand, not scheduled
+
+No background scheduler, no cron, no always-running process. A `POST /api/topics/{id}/generate-suggestions` route runs `generate_suggestion` against any unresolved feedback for that topic when you ask for it — from the UI, when you're actually looking at a topic and want to know if anything's changed. This was the deliberate call from the earlier proportionality discussion: an always-on poller needs its own scheduler, its own failure handling independent of any request-response cycle, and its own logging — real operational surface for a single-teacher tool that doesn't need to be running unattended. If usage later shows the on-demand trigger gets forgotten and feedback piles up unread, a scheduled batch job is a small, well-contained addition at that point — not a reason to build it now.
+
+---
+
 ## API Routes
 
 Implement all routes in the relevant router files. All routes return JSON.
@@ -562,6 +674,22 @@ GET  /api/export/lesson/{topic\_id}/pdf    \# Export lesson notes as PDF
 
 GET  /api/export/questions/{topic\_id}/pdf \# Export all three tiers as PDF
 
+### Feedback & Suggestions Router (`/api/feedback`, `/api/suggestions`)
+
+POST /api/feedback                              \# Log a signal: edit\_diff, post\_lesson\_note,
+
+                                                 \# spec\_drift, or self\_critique
+
+GET  /api/suggestions?topic\_id=\&status=         \# List suggestions, filterable
+
+POST /api/topics/{id}/generate-suggestions      \# On-demand: run the improvement agent
+
+                                                 \# against unresolved feedback for this topic
+
+POST /api/suggestions/{id}/accept               \# Apply proposed\_content, reset reviewed=false
+
+POST /api/suggestions/{id}/reject               \# Mark rejected, no cache write
+
 ---
 
 ## Frontend Design
@@ -600,6 +728,14 @@ Shows questions for the selected topic and difficulty tier.
 ### Progress Page (`Progress.jsx`)
 
 A simple table showing all topics that have been logged as taught, with date and class label. Filterable by key stage and strand.
+
+### Suggestions Page (`Suggestions.jsx`)
+
+Shows pending suggestions across all topics, or scoped to one topic when reached from the Lesson/Questions page.
+
+- Each suggestion shown as a card: topic name, content type, the rationale in plain text, and a field-aware before/after — not a raw JSON diff. For `lesson_notes`, render both versions as markdown side by side; for structured fields like `worked_examples` or `questions`, diff item by item rather than as one undifferentiated blob. This is the one genuinely fiddly piece of UI in the whole system — a wall of changed JSON is unreadable, so it's worth the extra render logic to keep each field's diff legible on its own terms.
+- Accept and Reject buttons per suggestion. Accepting shows a brief confirmation that the content still needs review before classroom use — don't let the act of accepting read as "this is now safe."
+- A "Check for improvements" button on the Lesson and Questions pages, scoped to the current topic, calling `generate-suggestions` on demand.
 
 ---
 
@@ -666,6 +802,14 @@ Confirm the network-access decision from Production Hardening (private via Tails
 
 Implement the rest of the Production Hardening section in full: retries and timeouts on all Anthropic calls, Pydantic validation with one retry on parse failure, the `reviewed` workflow in the UI (amber marker, "Mark reviewed" action), the `regeneration_log` table with the confirm-before-refresh dialog, structured logging, Alembic migrations retrofitted as the first revision against the Phase 1 schema, and the pytest suite with mocked API calls plus the GitHub Actions workflow. Treat this as part of the definition of done, not a stretch goal.
 
+### Phase 10 — Improvement Agent
+
+**Before writing any code in this phase:** read the actual current `models.py`, `routers/`, and `services/` in this project and reconcile them against this spec. This section was designed against the plan, not against the live codebase, and Phase 9 in particular (Alembic, the exact shape of `reviewed`/`reviewed_at`) may have been implemented with reasonable deviations during the real build. Where the real code differs from what's written here, follow the real code's existing conventions rather than forcing this spec's wording — consistency with what's already running matters more than matching this document exactly. (Alembic is already wired up from Phase 9 — this phase adds one more revision to it, nothing needs setting up from scratch.)
+
+Add the `content_feedback` and `suggested_revisions` tables as a new Alembic revision. Implement `improvement_agent.py` per the Improvement Agent section, reusing the existing `LessonSchema`/`QuestionSetSchema` Pydantic models rather than redefining them. Add the Feedback & Suggestions router. Build `Suggestions.jsx` with field-aware diffing — this is the part most likely to take longer than it looks; budget for it. Wire the "Check for improvements" action into the existing Lesson and Questions pages rather than treating Suggestions as a disconnected fifth page. Note the `edit_diff` signal's prerequisite (an in-place content-editing UI that doesn't exist yet) called out in the Improvement Agent section above — either build it as part of this phase or scope the first cut of Phase 10 to the other three signal types and land editing separately. Verify by manually creating a feedback row (`post_lesson_note` or `spec_drift` are the two signal types with no UI prerequisite), triggering `generate-suggestions`, confirming a `pending` suggestion appears with a sensible rationale, accepting it, and confirming the target cache row now shows `reviewed=false`.
+
+This is the first slice of a broader move toward automating more of the teaching workflow, not the whole of it — deliberately scoped to content QA/revision rather than scheme-of-work planning, pacing, or anything that decides *what* gets taught *when*. Revisit scope for any further agentic phase only after this one is built and actually used for a while.
+
 ---
 
 ## Code Quality Requirements
@@ -675,7 +819,7 @@ Implement the rest of the Production Hardening section in full: retries and time
 - Database sessions use dependency injection via FastAPI `Depends`.
 - All AI prompts are defined as constants or templates in `ai_service.py`, never hardcoded inline in routes.
 - SQLite WAL mode should be enabled for better concurrent read performance.
-- Environment variables used for: `ANTHROPIC_API_KEY`, `DATABASE_URL`, `ENVIRONMENT`, and `APP_PASSWORD_HASH` if public hosting is chosen over Tailscale (see Production Hardening).
+- Environment variables used for: `ANTHROPIC_API_KEY`, `DATABASE_URL`, `ENVIRONMENT`. No password/auth variable is needed — see Production Hardening, Network access and authentication.
 - Use `python-dotenv` for local `.env` loading.
 - Include a `.env.example` file.
 - All JSON stored in SQLite TEXT fields must be validated on write and parsed on read.
@@ -703,13 +847,7 @@ This system will be reachable beyond a single laptop, and it calls a metered ext
 
 ### Network access and authentication
 
-Resolve this explicitly before Phase 8, rather than defaulting silently — "accessible from any device in school" can be satisfied two different ways with very different security implications.
-
-**Recommended default:** deploy via Tailscale (or an equivalent WireGuard mesh). This reaches every device Abdul owns — laptop, phone, school desktop — without putting the app or the Anthropic API key on the open internet at all. No password layer is then strictly necessary, because the network itself is the perimeter.
-
-**If public hosting is chosen instead** — a plain Railway/Render URL reachable without a VPN client — authentication becomes mandatory. Implement the simplest correct thing: a single shared password checked against a hash stored in `APP_PASSWORD_HASH`, validated via a login cookie or `Authorization` header. Do not build multi-user accounts, roles, or OAuth — there is one user.
-
-State which path is being taken as part of the Phase 8 plan, and implement only that path.
+Resolved: Tailscale-only, no public hosting, no password layer. This reaches every device on the tailnet without putting the app or the Anthropic API key on the open internet at all — the network itself is the perimeter. The public-hosting-with-password-auth alternative that was left open earlier no longer applies now the project is confirmed personal-use only; if that changes later, revisit it then rather than carrying unused conditional logic in the codebase now.
 
 ### Secrets management
 

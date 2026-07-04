@@ -81,7 +81,7 @@ TIER_DEFINITIONS = {
 }
 
 QUESTIONS_USER_PROMPT_TEMPLATE = """\
-Generate 6 mathematics questions for the following:
+Generate 10 mathematics questions for the following:
 
 Key Stage: {key_stage}
 Topic: {topic_name}
