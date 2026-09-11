@@ -9,7 +9,7 @@ export default function ReviewedMarker({ reviewed, onMarkReviewed, marking }) {
   if (reviewed) return null;
 
   return (
-    <div className="flex items-center gap-2 rounded border border-tier-developing/40 bg-tier-developing/10 px-3 py-1.5 text-xs text-tier-developing">
+    <div className="flex items-center gap-2 rounded border border-tier-reasoning/40 bg-tier-reasoning/10 px-3 py-1.5 text-xs text-tier-reasoning">
       <span>Not yet checked</span>
       <button
         onClick={onMarkReviewed}

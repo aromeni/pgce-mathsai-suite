@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - "mathsai/backend/**"
+      - "mathsai/frontend/**"
       - ".github/workflows/test.yml"
   pull_request:
     paths:
       - "mathsai/backend/**"
+      - "mathsai/frontend/**"
       - ".github/workflows/test.yml"
 
 jobs:
@@ -40,3 +42,21 @@ jobs:
 
       - name: Run pytest
         run: pytest
+
+  render:
+    # Executes the lesson components against a real API payload. A Vite build
+    # succeeding proves only that the syntax is valid — a dangling variable
+    # reference compiles cleanly and throws at runtime, which is how a blank
+    # Lesson page once reached production.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mathsai/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:render

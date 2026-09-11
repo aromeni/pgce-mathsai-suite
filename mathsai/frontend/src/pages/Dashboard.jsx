@@ -66,7 +66,7 @@ export default function Dashboard() {
 
   if (status === "error") {
     return (
-      <p className="p-8 text-tier-extending">
+      <p className="p-8 text-tier-problem-solving">
         Couldn't load topics. Is the backend running on port 8000?
       </p>
     );

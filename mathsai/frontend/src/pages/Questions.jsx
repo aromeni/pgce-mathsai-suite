@@ -100,7 +100,7 @@ export default function Questions() {
         <Link to={`/lesson/${topicId}`} className="text-sm text-accent hover:underline">
           &larr; Back to Lesson
         </Link>
-        <p className="mt-4 text-tier-extending">{errorMessage}</p>
+        <p className="mt-4 text-tier-problem-solving">{errorMessage}</p>
       </div>
     );
   }

@@ -77,7 +77,7 @@ export default function Progress() {
   }
 
   if (status === "error") {
-    return <p className="p-8 text-tier-extending">Couldn't load progress data.</p>;
+    return <p className="p-8 text-tier-problem-solving">Couldn't load progress data.</p>;
   }
 
   return (
@@ -153,7 +153,7 @@ export default function Progress() {
                   <td className="px-4 py-3">
                     <button
                       onClick={() => handleDelete(row.id)}
-                      className="text-xs text-tier-extending hover:underline"
+                      className="text-xs text-tier-problem-solving hover:underline"
                     >
                       Remove
                     </button>

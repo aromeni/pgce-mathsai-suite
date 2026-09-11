@@ -113,7 +113,7 @@ export default function Lesson() {
         <Link to="/" className="text-sm text-accent hover:underline">
           &larr; Back to Dashboard
         </Link>
-        <p className="mt-4 text-tier-extending">{errorMessage}</p>
+        <p className="mt-4 text-tier-problem-solving">{errorMessage}</p>
       </div>
     );
   }
@@ -132,7 +132,7 @@ export default function Lesson() {
         </div>
         <h1 className="font-display text-2xl font-bold text-text-primary">{topic.topic_name}</h1>
         {lesson.stale && (
-          <p className="mt-2 text-xs text-tier-developing">
+          <p className="mt-2 text-xs text-tier-reasoning">
             Last generated {new Date(lesson.generated_at).toLocaleDateString()} — refresh failed,
             showing previous version.
           </p>

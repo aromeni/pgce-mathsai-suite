@@ -55,7 +55,7 @@ export default function MarkAsTaughtForm({ topicId, onDone }) {
       >
         {submitting ? "Logging…" : "Log"}
       </button>
-      {error && <p className="w-full text-xs text-tier-extending">{error}</p>}
+      {error && <p className="w-full text-xs text-tier-problem-solving">{error}</p>}
     </form>
   );
 }

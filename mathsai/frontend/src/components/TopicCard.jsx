@@ -36,7 +36,7 @@ export default function TopicCard({ topic, taught }) {
         </span>
         <div className="flex items-center gap-2 text-text-secondary">
           {taught && (
-            <span title="Taught" className="text-tier-foundation">
+            <span title="Taught" className="text-tier-fluency">
               <CheckIcon />
             </span>
           )}
