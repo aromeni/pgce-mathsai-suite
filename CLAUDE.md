@@ -762,6 +762,26 @@ All cards should have subtle hover states. No excessive animation. Clean, inform
 
 ---
 
+## Content Quality Pass — supersedes parts of the AI Service Design above
+
+The lesson schema and difficulty tiers specified earlier in this document have been superseded. Where this section and the original text disagree, this section is what the code does.
+
+**Lesson content** is no longer `lesson_notes` + `worked_examples` + `key_vocabulary` + `common_errors`. It is a teaching sequence — `topic_introduction`, `starter`, `i_do`, `we_do`, `key_vocabulary`, `common_errors`, `adaptive_teaching`, `plenary` — following gradual release over Rosenshine, with cognitive load theory governing pacing. "You do" is deliberately the existing tiered question sets rather than a fourth block, so practice questions are not generated twice in two shapes.
+
+**Difficulty tiers** are `Fluency` / `Reasoning` / `Problem-solving`, not `Foundation` / `Developing` / `Extending`. The original names collided with `topics.difficulty_band`, where "Foundation" means Edexcel's tier of entry — one word carrying two meanings in one database. The new names follow the Assessment Objectives and describe what the pupil does.
+
+**Adaptive teaching** (Teachers' Standard 5) is a first-class block: scaffolds with removal conditions, concrete representations, EAL language support, and stretch. The governing constraint, in the prompt and enforced by requiring `same_maths_because` on reworded problems: reduce linguistic load, never mathematical demand.
+
+**Generation** is three concurrent calls (teaching sequence, supporting material, adaptive) merged into one cached row — sequential would be ~95s against the timeout; measured wall clock is ~42s.
+
+**`topics.year_group`** carries a default for all 74 topics. "KS3" spans Years 7-9, far too wide to pitch against. `seed_topics` backfills it on startup, because it only inserts into an empty table and would otherwise leave the column NULL forever on an existing database.
+
+**`lesson_cache.schema_version`** marks which shape a row was written under. Version 1 rows are served with `outdated_format` set and are never regenerated automatically — that would spend credits across the whole curriculum unasked.
+
+**Questions** receive the lesson's `common_errors`, so multiple-choice distractors are built from identified misconceptions rather than arbitrary wrong answers. They also carry Edexcel command words, M1/A1/B1 mark schemes, calculator flags, and `requires_diagram` — a text model must flag what it cannot draw rather than emit "the diagram below" and produce an unanswerable printed question.
+
+---
+
 ## Implementation Phases
 
 Build in this sequence. Complete and confirm each phase before starting the next.

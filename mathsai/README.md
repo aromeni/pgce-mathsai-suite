@@ -7,8 +7,9 @@ All 9 implementation phases from `CLAUDE.md` are complete, plus a tenth piece of
 ## What MathsAI does
 
 - Browse the full KS3/KS4 Edexcel mathematics curriculum via a topic dashboard, grouped by strand
-- Generate a complete lesson package per topic (notes, worked examples, key vocabulary, common errors) on first view, cached in SQLite from then on
-- Generate three tiers of practice questions (Foundation, Developing, Extending) with answers and mark schemes, cached the same way
+- Generate a complete **teaching sequence** per topic on first view — introduction, retrieval starter, modelled examples (I do), faded guided practice (We do), adaptive teaching, and an exit ticket — cached in SQLite from then on
+- Generate three tiers of practice questions (Fluency, Reasoning, Problem-solving — Edexcel's Assessment Objectives) with answers and Edexcel-notation mark schemes, cached the same way
+- Adaptive teaching material for SEND and EAL pupils: scaffolds with removal conditions, concrete representations, false-friend vocabulary, sentence stems, and reduced-language problems
 - Track which topics have been taught, to which class, and when
 - Export lesson content and questions to print-friendly PDF
 - Every piece of AI-generated content carries a `reviewed` flag — new content is visibly unchecked until a teacher marks it reviewed, since self-verification by the model isn't a reliable substitute
@@ -38,7 +39,7 @@ All routes are prefixed `/api`. Full request/response shapes are in `backend/sch
 | `/lessons/{topic_id}` | GET | Lesson package — cache hit, or generate-and-cache on miss |
 | `/lessons/{topic_id}/refresh` | POST | Force regeneration (writes a `regeneration_log` row) |
 | `/lessons/{topic_id}/review` | POST | Mark the cached lesson reviewed |
-| `/questions/{topic_id}/{difficulty}` | GET | Question set for one tier (`Foundation`/`Developing`/`Extending`) |
+| `/questions/{topic_id}/{difficulty}` | GET | Question set for one tier (`Fluency`/`Reasoning`/`Problem-solving`) |
 | `/questions/{topic_id}/{difficulty}/refresh` | POST | Force regeneration for that tier |
 | `/questions/{topic_id}/{difficulty}/status` | GET | Reviewed/generated_at metadata only — never triggers generation |
 | `/questions/{topic_id}/{difficulty}/review` | POST | Mark that tier's cached questions reviewed |
@@ -95,6 +96,52 @@ Every lesson and question tier is generated once and cached — normal use never
 - Directly via the API: `POST /api/lessons/{topic_id}/refresh` or `POST /api/questions/{topic_id}/{difficulty}/refresh`.
 
 Every force-refresh — regardless of whether generation then succeeds or fails — writes a row to the `regeneration_log` table (`topic_id`, `content_type`, `timestamp`), so accidental repeated clicks are visible after the fact even though the confirmation dialog already guards against them at the point of click.
+
+## The teaching sequence
+
+A lesson is a sequence to teach from, not a reference document. It follows gradual release (I do / We do / You do) over Rosenshine's principles, with cognitive load theory governing how much arrives at once:
+
+| Phase | What it contains |
+|---|---|
+| **Introduce** | What the topic is, why it matters, prior knowledge assumed, what it leads to, objectives, pupil-facing success criteria |
+| **Starter** | Retrieval practice on the **prerequisites**, not today's topic. Six questions tiered so you pick by class |
+| **I do** | Modelled examples split into `working` (what goes on the board) and `narration` (what you say while writing it) |
+| **We do** | Guided practice with **progressive fading** — the first example fades late, the second early |
+| **You do** | The tiered question sets, reached from the lesson page |
+| **Plenary** | Exit tickets, each with what it checks |
+
+The `working`/`narration` split is the point of the "I do" phase: narrating the reasoning is what separates modelling from demonstrating. The fade rate in "We do" is also the SEND adaptation — same task, same goal, different amount of support withdrawn.
+
+### Adaptive teaching
+
+Teachers' Standard 5, on its own tab because it is read while planning against a class list rather than while teaching. The governing principle, stated in the prompt as well as the UI: **same learning goal, different route in — never different, easier work.**
+
+- **Scaffolds** carry the barrier *and* a removal condition. A scaffold that never comes off is a ceiling.
+- **Concrete representations** name an actual resource (algebra tiles, bar model, Cuisenaire) and the bridge back to abstract notation.
+- **Language support** for EAL: Tier 2 academic vocabulary, maths/everyday **false friends** (*product, mean, term, balance*), sentence stems for accessing reasoning marks, and reduced-language problems.
+- Reduced-language problems must state `same_maths_because` — the equation both versions lead to. Reducing the English must never reduce the mathematics, and requiring the model to show that equation makes a breach visible instead of hidden in prose.
+- **Stretch** is depth on the same content, not acceleration onto next year's.
+
+### Lesson schema versions
+
+`lesson_cache` rows carry a `schema_version`. Rows generated before the teaching sequence existed are still served, flagged `outdated_format`, with the page offering regeneration. They are never regenerated automatically — that would spend credits across every topic already generated without being asked.
+
+## Pre-generating content
+
+Generation takes ~40s for a lesson and ~25s per question tier. Fine the evening before; not fine five minutes before a lesson. `scripts/warm_cache.py` walks the topics you choose and generates them ahead of time.
+
+It drives the **live API over HTTP**, not a local database — the deployed instance keeps its SQLite file on its own disk, so a script writing locally would populate the wrong copy.
+
+```bash
+export MATHSAI_URL=https://your-instance.onrender.com
+export MATHSAI_PASSWORD='...'
+
+python scripts/warm_cache.py --dry-run --all            # plan and cost, spends nothing
+python scripts/warm_cache.py --key-stage KS3 --strand Algebra
+python scripts/warm_cache.py --topics 15 26 41
+```
+
+Already-cached content is skipped for free — `has_cached_lesson` and the questions `status` endpoint both report state without triggering generation — so re-running after an interruption costs nothing for what is already done. A scope is required: warming all 74 topics takes about an hour and costs around £10, which should be asked for deliberately.
 
 ## The reviewed workflow
 

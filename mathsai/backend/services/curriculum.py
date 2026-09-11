@@ -258,9 +258,35 @@ def seed_topics(db: Session) -> None:
     existing_count = db.query(Topic).count()
     if existing_count > 0:
         logger.info("Topics table already seeded (%d rows) — skipping.", existing_count)
+        _backfill_year_groups(db)
         return
 
     topics = [Topic(**entry) for entry in CURRICULUM_TAXONOMY]
     db.bulk_save_objects(topics)
     db.commit()
     logger.info("Seeded %d curriculum topics.", len(topics))
+
+
+def _backfill_year_groups(db: Session) -> None:
+    """Fill in year_group on topics seeded before the column existed.
+
+    seed_topics only inserts into an empty table, so a database already
+    holding the curriculum would otherwise keep year_group NULL forever after
+    the migration added it — and every generated lesson would be pitched at
+    "unspecified" rather than a year. Runs on every startup and is idempotent:
+    it only touches rows where the value is missing.
+    """
+    missing = db.query(Topic).filter(Topic.year_group.is_(None)).all()
+    if not missing:
+        return
+
+    updated = 0
+    for topic in missing:
+        year = _YEAR_GROUPS.get(topic.topic_name)
+        if year is not None:
+            topic.year_group = year
+            updated += 1
+
+    if updated:
+        db.commit()
+        logger.info("Backfilled year_group on %d topics.", updated)
