@@ -10,21 +10,7 @@ from anthropic import APITimeoutError, RateLimitError
 
 from services import ai_service
 
-LESSON_JSON = json.dumps(
-    {
-        "lesson_notes": "# Quadratic Equations\n\nLearning objectives...",
-        "worked_examples": [
-            {
-                "title": "Example 1 — factorising",
-                "problem": "x^2 - 5x + 6 = 0",
-                "solution": "(x-2)(x-3)=0, so x=2 or x=3",
-                "teaching_note": "Emphasise sign checking",
-            }
-        ],
-        "key_vocabulary": [{"term": "quadratic", "definition": "a degree-2 polynomial equation"}],
-        "common_errors": [{"error": "sign error when factorising", "correction": "check signs multiply to give constant term"}],
-    }
-)
+from lesson_fixtures import PART_MARKERS, VALID_LESSON_RAW
 
 QUESTIONS_JSON = json.dumps(
     [
@@ -64,8 +50,9 @@ def _mock_client(*script) -> MagicMock:
     """`script` is a sequence of exceptions and/or raw text bodies, consumed
     in order across successive `.stream()` calls.
 
-    ai_service streams and calls get_final_message(), so the mock has to
-    stand in for the context manager rather than a plain return value."""
+    ai_service streams and calls get_final_message(), so the mock stands in
+    for the context manager rather than a plain return value.
+    """
     queue = list(script)
 
     def side_effect(*args, **kwargs):
@@ -83,68 +70,128 @@ def _mock_client(*script) -> MagicMock:
     return client
 
 
-def test_generate_lesson_success_first_try():
-    client = _mock_client(LESSON_JSON)
+def _mock_lesson_client(fail_parts: int = 0, always_fail: str = "") -> MagicMock:
+    """Client mock for whole-lesson generation.
+
+    generate_lesson fires three prompts concurrently, so responses cannot be
+    scripted by position — the arrival order is not deterministic. This mock
+    inspects the prompt it was handed and answers with the matching fragment.
+    `fail_parts` raises a rate-limit error on the first N calls, to exercise
+    the per-call retry. `always_fail` is a marker phrase whose part fails on
+    every attempt — needed to test one part exhausting its retry, since
+    scattering N failures across three concurrent parts would just be
+    absorbed by three separate retries.
+    """
+    state = {"failures": fail_parts}
+
+    def side_effect(*args, **kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        if always_fail and always_fail in prompt:
+            raise _rate_limit_error()
+        if state["failures"] > 0:
+            state["failures"] -= 1
+            raise _rate_limit_error()
+        for marker, fragment in PART_MARKERS.items():
+            if marker in prompt:
+                stream_ctx = MagicMock()
+                stream_ctx.__enter__.return_value.get_final_message.return_value = (
+                    _text_response(json.dumps(fragment))
+                )
+                return stream_ctx
+        raise AssertionError(f"prompt matched no known lesson part: {prompt[:80]!r}")
+
+    client = MagicMock()
+    client.with_options.return_value.messages.stream.side_effect = side_effect
+    return client
+
+
+def test_generate_lesson_merges_all_three_fragments():
+    """The three concurrent calls must all land in one merged lesson."""
+    client = _mock_lesson_client()
     with patch.object(ai_service, "_get_client", return_value=client):
-        result = ai_service.generate_lesson("KS4", "Quadratic Equations", "A12")
+        result = ai_service.generate_lesson(
+            "KS3", "Solving linear equations", "Algebra", year_group=8
+        )
 
-    assert result["lesson_notes"].startswith("# Quadratic Equations")
-    assert len(result["worked_examples"]) == 1
-    assert client.with_options.return_value.messages.stream.call_count == 1
+    for key in VALID_LESSON_RAW:
+        assert key in result, f"{key} missing from merged lesson"
+    assert result["i_do"][0]["steps"][0]["narration"]
+    assert result["adaptive_teaching"]["language_support"]["false_friends"]
+    assert client.with_options.return_value.messages.stream.call_count == 3
 
 
-def test_generate_lesson_retries_once_on_rate_limit_then_succeeds():
-    client = _mock_client(_rate_limit_error(), LESSON_JSON)
+def test_generate_lesson_each_part_retries_once_on_rate_limit():
+    # One failure, absorbed by that part's own retry: 3 parts + 1 retry.
+    client = _mock_lesson_client(fail_parts=1)
     with patch.object(ai_service, "_get_client", return_value=client), patch.object(
         ai_service.time, "sleep", return_value=None
     ):
-        result = ai_service.generate_lesson("KS4", "Quadratic Equations", "A12")
+        result = ai_service.generate_lesson(
+            "KS3", "Solving linear equations", "Algebra", year_group=8
+        )
 
-    assert result["lesson_notes"].startswith("# Quadratic Equations")
-    assert client.with_options.return_value.messages.stream.call_count == 2
-
-
-def test_generate_lesson_retries_once_on_timeout_then_succeeds():
-    client = _mock_client(_timeout_error(), LESSON_JSON)
-    with patch.object(ai_service, "_get_client", return_value=client), patch.object(
-        ai_service.time, "sleep", return_value=None
-    ):
-        result = ai_service.generate_lesson("KS4", "Quadratic Equations", "A12")
-
-    assert result["lesson_notes"].startswith("# Quadratic Equations")
+    assert "topic_introduction" in result
+    assert client.with_options.return_value.messages.stream.call_count == 4
 
 
-def test_generate_lesson_raises_after_two_failures():
-    client = _mock_client(_rate_limit_error(), _rate_limit_error())
+def test_generate_lesson_raises_when_a_part_fails_twice():
+    """A lesson missing its adaptive teaching or starter is not a lesson this
+    system should cache and present as complete — one part failing fails the
+    whole generation."""
+    client = _mock_lesson_client(always_fail="Produce the adaptive teaching plan")
     with patch.object(ai_service, "_get_client", return_value=client), patch.object(
         ai_service.time, "sleep", return_value=None
     ):
         with pytest.raises(ai_service.AIGenerationError):
-            ai_service.generate_lesson("KS4", "Quadratic Equations", "A12")
-
-    # not more than one retry — a teacher should see a fast, clear failure
-    assert client.with_options.return_value.messages.stream.call_count == 2
+            ai_service.generate_lesson(
+                "KS3", "Solving linear equations", "Algebra", year_group=8
+            )
 
 
 def test_generate_lesson_invalid_json_raises_ai_generation_error():
-    client = _mock_client("this is not json {")
+    client = _mock_client("this is not json {", "also not json", "nor this")
     with patch.object(ai_service, "_get_client", return_value=client):
         with pytest.raises(ai_service.AIGenerationError):
-            ai_service.generate_lesson("KS4", "Quadratic Equations", "A12")
+            ai_service.generate_lesson(
+                "KS3", "Solving linear equations", "Algebra", year_group=8
+            )
 
 
 def test_generate_lesson_strips_accidental_markdown_fences():
-    fenced = "```json\n" + LESSON_JSON + "\n```"
-    client = _mock_client(fenced)
+    fenced = "```json\n" + json.dumps(VALID_LESSON_RAW) + "\n```"
+    client = _mock_client(fenced, fenced, fenced)
     with patch.object(ai_service, "_get_client", return_value=client):
-        result = ai_service.generate_lesson("KS4", "Quadratic Equations", "A12")
-    assert result["lesson_notes"].startswith("# Quadratic Equations")
+        result = ai_service.generate_lesson(
+            "KS3", "Solving linear equations", "Algebra", year_group=8
+        )
+    assert "topic_introduction" in result
+
+
+def test_lesson_prompts_carry_the_year_group():
+    """KS3 spans three years; the pitch depends on this reaching the prompt."""
+    captured = []
+
+    def capture(*args, **kwargs):
+        captured.append(kwargs["messages"][0]["content"])
+        stream_ctx = MagicMock()
+        stream_ctx.__enter__.return_value.get_final_message.return_value = (
+            _text_response(json.dumps({}))
+        )
+        return stream_ctx
+
+    client = MagicMock()
+    client.with_options.return_value.messages.stream.side_effect = capture
+    with patch.object(ai_service, "_get_client", return_value=client):
+        ai_service.generate_lesson("KS3", "Fractions", "Number", year_group=7)
+
+    assert len(captured) == 3
+    assert all("Year 7" in prompt for prompt in captured)
 
 
 def test_generate_questions_success():
     client = _mock_client(QUESTIONS_JSON)
     with patch.object(ai_service, "_get_client", return_value=client):
-        result = ai_service.generate_questions("KS4", "Quadratic Equations", "Foundation")
+        result = ai_service.generate_questions("KS4", "Quadratic Equations", "Fluency")
 
     assert isinstance(result, list)
     assert result[0]["question_number"] == 1

@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from models import Topic
+from schemas import QuestionItem
 from services import ai_service, cache_service
 
 QUESTIONS_LIST = [
@@ -33,10 +34,12 @@ def topic(db_session) -> Topic:
 
 def test_get_questions_success(client, topic):
     with patch.object(cache_service, "get_questions", return_value=QUESTIONS_LIST):
-        response = client.get(f"/api/questions/{topic.id}/Foundation")
+        response = client.get(f"/api/questions/{topic.id}/Fluency")
 
     assert response.status_code == 200
-    assert response.json() == QUESTIONS_LIST
+    # Compared against the serialised schema rather than the raw input, so
+    # adding an optional question field does not break this expectation.
+    assert response.json() == [QuestionItem(**q).model_dump() for q in QUESTIONS_LIST]
 
 
 def test_get_questions_invalid_difficulty_returns_422(client, topic):
@@ -50,7 +53,7 @@ def test_get_questions_topic_not_found_returns_404(client):
     with patch.object(
         cache_service, "get_questions", side_effect=cache_service.TopicNotFoundError("Topic 999 not found")
     ):
-        response = client.get("/api/questions/999/Foundation")
+        response = client.get("/api/questions/999/Fluency")
 
     assert response.status_code == 404
 
@@ -59,14 +62,14 @@ def test_get_questions_generation_failure_returns_503(client, topic):
     with patch.object(
         cache_service, "get_questions", side_effect=ai_service.AIGenerationError("down")
     ):
-        response = client.get(f"/api/questions/{topic.id}/Foundation")
+        response = client.get(f"/api/questions/{topic.id}/Fluency")
 
     assert response.status_code == 503
 
 
 def test_refresh_questions_calls_force_refresh(client, topic):
     with patch.object(cache_service, "get_questions", return_value=QUESTIONS_LIST) as mock_get:
-        response = client.post(f"/api/questions/{topic.id}/Extending/refresh")
+        response = client.post(f"/api/questions/{topic.id}/Problem-solving/refresh")
 
     assert response.status_code == 200
     assert mock_get.call_args.kwargs.get("force_refresh") is True
@@ -81,7 +84,7 @@ def test_refresh_questions_invalid_difficulty_returns_422(client, topic):
 
 STATUS_DICT = {
     "topic_id": 1,
-    "difficulty": "Foundation",
+    "difficulty": "Fluency",
     "generated_at": "2026-01-01T00:00:00",
     "model_used": ai_service.MODEL,
     "reviewed": False,
@@ -91,7 +94,7 @@ STATUS_DICT = {
 
 def test_get_questions_status_returns_metadata(client, topic):
     with patch.object(cache_service, "get_questions_status", return_value={**STATUS_DICT, "topic_id": topic.id}):
-        response = client.get(f"/api/questions/{topic.id}/Foundation/status")
+        response = client.get(f"/api/questions/{topic.id}/Fluency/status")
 
     assert response.status_code == 200
     assert response.json()["reviewed"] is False
@@ -99,7 +102,7 @@ def test_get_questions_status_returns_metadata(client, topic):
 
 def test_get_questions_status_returns_null_when_not_cached(client, topic):
     with patch.object(cache_service, "get_questions_status", return_value=None):
-        response = client.get(f"/api/questions/{topic.id}/Foundation/status")
+        response = client.get(f"/api/questions/{topic.id}/Fluency/status")
 
     assert response.status_code == 200
     assert response.json() is None
@@ -109,7 +112,7 @@ def test_get_questions_status_topic_not_found_returns_404(client):
     with patch.object(
         cache_service, "get_questions_status", side_effect=cache_service.TopicNotFoundError("nope")
     ):
-        response = client.get("/api/questions/999/Foundation/status")
+        response = client.get("/api/questions/999/Fluency/status")
 
     assert response.status_code == 404
 
@@ -117,7 +120,7 @@ def test_get_questions_status_topic_not_found_returns_404(client):
 def test_mark_questions_reviewed_success(client, topic):
     reviewed = {**STATUS_DICT, "topic_id": topic.id, "reviewed": True, "reviewed_at": "2026-01-02T00:00:00"}
     with patch.object(cache_service, "mark_questions_reviewed", return_value=reviewed):
-        response = client.post(f"/api/questions/{topic.id}/Foundation/review")
+        response = client.post(f"/api/questions/{topic.id}/Fluency/review")
 
     assert response.status_code == 200
     assert response.json()["reviewed"] is True
@@ -127,7 +130,7 @@ def test_mark_questions_reviewed_not_cached_returns_404(client, topic):
     with patch.object(
         cache_service, "mark_questions_reviewed", side_effect=cache_service.ContentNotCachedError("nothing yet")
     ):
-        response = client.post(f"/api/questions/{topic.id}/Foundation/review")
+        response = client.post(f"/api/questions/{topic.id}/Fluency/review")
 
     assert response.status_code == 404
 
@@ -136,6 +139,6 @@ def test_mark_questions_reviewed_topic_not_found_returns_404(client):
     with patch.object(
         cache_service, "mark_questions_reviewed", side_effect=cache_service.TopicNotFoundError("nope")
     ):
-        response = client.post("/api/questions/999/Foundation/review")
+        response = client.post("/api/questions/999/Fluency/review")
 
     assert response.status_code == 404
