@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LessonPanel from "../components/LessonPanel";
 import ReviewedMarker from "../components/ReviewedMarker";
+import LoadingNotice from "../components/LoadingNotice";
 import {
   exportLessonPdf,
   getLesson,
@@ -156,7 +157,7 @@ export default function Lesson() {
   };
 
   if (status === "loading") {
-    return <p className="p-8 text-text-secondary">Loading lesson…</p>;
+    return <LoadingNotice label="Loading lesson…" />;
   }
 
   if (status === "error") {

@@ -62,17 +62,24 @@ def _timeout_error() -> APITimeoutError:
 
 def _mock_client(*script) -> MagicMock:
     """`script` is a sequence of exceptions and/or raw text bodies, consumed
-    in order across successive `.create()` calls."""
+    in order across successive `.stream()` calls.
+
+    ai_service streams and calls get_final_message(), so the mock has to
+    stand in for the context manager rather than a plain return value."""
     queue = list(script)
 
     def side_effect(*args, **kwargs):
         item = queue.pop(0)
         if isinstance(item, Exception):
             raise item
-        return _text_response(item)
+        stream_ctx = MagicMock()
+        stream_ctx.__enter__.return_value.get_final_message.return_value = (
+            _text_response(item)
+        )
+        return stream_ctx
 
     client = MagicMock()
-    client.with_options.return_value.messages.create.side_effect = side_effect
+    client.with_options.return_value.messages.stream.side_effect = side_effect
     return client
 
 
@@ -83,7 +90,7 @@ def test_generate_lesson_success_first_try():
 
     assert result["lesson_notes"].startswith("# Quadratic Equations")
     assert len(result["worked_examples"]) == 1
-    assert client.with_options.return_value.messages.create.call_count == 1
+    assert client.with_options.return_value.messages.stream.call_count == 1
 
 
 def test_generate_lesson_retries_once_on_rate_limit_then_succeeds():
@@ -94,7 +101,7 @@ def test_generate_lesson_retries_once_on_rate_limit_then_succeeds():
         result = ai_service.generate_lesson("KS4", "Quadratic Equations", "A12")
 
     assert result["lesson_notes"].startswith("# Quadratic Equations")
-    assert client.with_options.return_value.messages.create.call_count == 2
+    assert client.with_options.return_value.messages.stream.call_count == 2
 
 
 def test_generate_lesson_retries_once_on_timeout_then_succeeds():
@@ -116,7 +123,7 @@ def test_generate_lesson_raises_after_two_failures():
             ai_service.generate_lesson("KS4", "Quadratic Equations", "A12")
 
     # not more than one retry — a teacher should see a fast, clear failure
-    assert client.with_options.return_value.messages.create.call_count == 2
+    assert client.with_options.return_value.messages.stream.call_count == 2
 
 
 def test_generate_lesson_invalid_json_raises_ai_generation_error():

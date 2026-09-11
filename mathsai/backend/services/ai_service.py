@@ -1,7 +1,7 @@
 """All Anthropic API calls — single source of truth (CLAUDE.md AI Service Design).
 
 No other module should call the Anthropic SDK directly. Every call gets a
-30s timeout and one retry with a short backoff on timeout/429/5xx, per
+timeout and one retry with a short backoff on timeout/429/5xx, per
 CLAUDE.md Production Hardening — Resilience.
 """
 
@@ -15,7 +15,16 @@ from anthropic import Anthropic, APIStatusError, APITimeoutError, RateLimitError
 logger = logging.getLogger("mathsai")
 
 MODEL = "claude-sonnet-5"
-REQUEST_TIMEOUT_SECONDS = 30.0
+
+# CLAUDE.md proposed 30s as "reasonable for one generation". Measured against
+# the real workload it is not: a KS4 lesson (e.g. Circle theorems) returns
+# ~4,100 output tokens and takes ~40s end to end at ~100 tok/s, so every
+# generation timed out, retried, timed out again, and surfaced a 503 after
+# ~62s of waiting — while still being billed for both discarded completions,
+# since the model had generated them in full before the client hung up.
+# 120s clears the worst case (MAX_TOKENS at the observed throughput ≈ 77s)
+# with headroom.
+REQUEST_TIMEOUT_SECONDS = 120.0
 RETRY_BACKOFF_SECONDS = 2.0
 MAX_TOKENS = 8000
 
@@ -113,8 +122,9 @@ Return only a valid JSON array. No preamble, no markdown fences.
 
 
 def _call_with_retry(system: str, user_prompt: str, log_context: Optional[dict] = None) -> str:
-    """Call the Anthropic API with a 30s timeout, retrying once on
-    timeout/429/5xx with a short backoff. Raises AIGenerationError if both
+    """Call the Anthropic API with a streamed request and a
+    REQUEST_TIMEOUT_SECONDS timeout, retrying once on timeout/429/5xx with a
+    short backoff. Raises AIGenerationError if both
     attempts fail.
 
     Prompt caching (`cache_control` on the system block) was tried and
@@ -138,13 +148,24 @@ def _call_with_retry(system: str, user_prompt: str, log_context: Optional[dict] 
 
     for attempt in range(2):
         try:
-            response = client.with_options(timeout=REQUEST_TIMEOUT_SECONDS).messages.create(
+            # Streamed rather than a single blocking response. At MAX_TOKENS
+            # = 8000 the Anthropic SDK documents streaming as the way to
+            # avoid HTTP timeouts on long generations, and a stream keeps
+            # bytes moving over the connection, which also stops an
+            # intermediary proxy (Render's load balancer) treating a 40s
+            # generation as an idle connection. get_final_message()
+            # reassembles the complete response, so everything downstream —
+            # .content, .usage — is unchanged.
+            with client.with_options(
+                timeout=REQUEST_TIMEOUT_SECONDS
+            ).messages.stream(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
                 thinking={"type": "disabled"},
                 system=system,
                 messages=[{"role": "user", "content": user_prompt}],
-            )
+            ) as stream:
+                response = stream.get_final_message()
             duration = time.monotonic() - start
             usage = getattr(response, "usage", None)
             logger.info(

@@ -4,6 +4,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import DifficultyBadge from "../components/DifficultyBadge";
 import QuestionBlock from "../components/QuestionBlock";
 import ReviewedMarker from "../components/ReviewedMarker";
+import LoadingNotice from "../components/LoadingNotice";
 import {
   exportQuestionsPdf,
   getQuestions,
@@ -90,7 +91,7 @@ export default function Questions() {
   };
 
   if (status === "loading") {
-    return <p className="p-8 text-text-secondary">Loading questions…</p>;
+    return <LoadingNotice label="Loading questions…" />;
   }
 
   if (status === "error") {
