@@ -1,8 +1,16 @@
 """Static Edexcel KS3/KS4 mathematics curriculum taxonomy.
 
 This is reference data only — seeding this table never triggers AI content
-generation. `edexcel_ref` and `difficulty_band` are left unset where CLAUDE.md
-did not specify exact codes/tiers; the teacher can refine these later.
+generation.
+
+`edexcel_ref` is deliberately left unset: CLAUDE.md gave two example codes
+(N5, A12) and no full mapping, and an invented specification reference is
+worse than an absent one. Populate from the specification if you want them.
+
+`year_group` carries a default per topic so generation has a concrete pitch
+to aim at rather than a three-year key stage. These are typical placements,
+not prescriptions — a school's own scheme of work takes precedence, and the
+column is editable.
 """
 
 import logging
@@ -115,6 +123,84 @@ _KS4_PROBABILITY_STATISTICS = [
 ]
 
 
+_YEAR_GROUPS = {
+    'Place value and ordering': 7,
+    'Addition and subtraction': 7,
+    'Multiplication and division': 7,
+    'Fractions': 7,
+    'Decimals': 7,
+    'Percentages': 8,
+    'Ratio and proportion': 8,
+    'Powers and roots': 8,
+    'Order of operations (BIDMAS)': 7,
+    'Negative numbers': 7,
+    'Introduction to algebra (expressions and terms)': 7,
+    'Simplifying expressions': 7,
+    'Expanding brackets': 8,
+    'Factorising': 8,
+    'Solving linear equations': 8,
+    'Sequences (term-to-term and nth term)': 8,
+    'Coordinates and straight-line graphs': 8,
+    'Substitution': 7,
+    'Angles (types, rules, parallel lines)': 7,
+    'Properties of 2D shapes': 7,
+    'Properties of 3D shapes': 7,
+    'Perimeter and area': 7,
+    'Volume and surface area': 8,
+    'Transformations (reflection, rotation, translation, enlargement)': 8,
+    'Symmetry': 7,
+    'Constructions and loci': 9,
+    "Pythagoras' theorem (introduction)": 9,
+    'Units and measurement': 7,
+    'Collecting and organising data': 7,
+    'Bar charts, pie charts, pictograms': 7,
+    'Mean, median, mode and range': 7,
+    'Scatter graphs and correlation': 9,
+    'Basic probability': 8,
+    'Frequency tables and two-way tables': 8,
+    'Indices and surds': 10,
+    'Standard form': 10,
+    'Bounds and error intervals': 11,
+    'Fractions (complex operations)': 10,
+    'Percentage change, reverse percentage': 10,
+    'Ratio and proportion (advanced)': 10,
+    'Recurring decimals': 11,
+    'Expanding and factorising (advanced)': 10,
+    'Quadratic equations (factorising, formula, completing the square)': 10,
+    'Simultaneous equations': 10,
+    'Inequalities': 10,
+    'nth term of quadratic sequences': 11,
+    'Functions and function notation': 11,
+    'Graph transformations': 11,
+    'Linear and quadratic graphs': 10,
+    'Cubic and reciprocal graphs': 11,
+    'Real-life graphs': 10,
+    'Iteration': 11,
+    'Algebraic proof': 11,
+    'Direct and inverse proportion': 10,
+    'Compound measures (speed, density, pressure)': 10,
+    'Growth and decay': 11,
+    'Rates of change from graphs': 11,
+    'Circle theorems': 11,
+    'Arc length and sector area': 10,
+    'Pythagoras in 3D': 11,
+    'Trigonometry (SOHCAHTOA)': 10,
+    'Sine and cosine rules': 11,
+    'Vectors': 11,
+    'Congruence and similarity': 10,
+    'Plans and elevations': 10,
+    'Surface area and volume (advanced)': 10,
+    'Bearings': 10,
+    'Venn diagrams and set notation': 10,
+    'Tree diagrams': 10,
+    'Conditional probability': 11,
+    'Cumulative frequency and box plots': 11,
+    'Histograms': 11,
+    'Sampling methods': 11,
+    'Averages from grouped frequency tables': 10,
+}
+
+
 def _build_taxonomy() -> list[dict]:
     taxonomy: list[dict] = []
 
@@ -133,6 +219,7 @@ def _build_taxonomy() -> list[dict]:
                     "topic_name": topic_name,
                     "edexcel_ref": None,
                     "difficulty_band": "Both",
+                    "year_group": _YEAR_GROUPS.get(topic_name),
                 }
             )
 
@@ -152,6 +239,7 @@ def _build_taxonomy() -> list[dict]:
                     "topic_name": topic_name,
                     "edexcel_ref": None,
                     "difficulty_band": None,
+                    "year_group": _YEAR_GROUPS.get(topic_name),
                 }
             )
 
@@ -170,9 +258,35 @@ def seed_topics(db: Session) -> None:
     existing_count = db.query(Topic).count()
     if existing_count > 0:
         logger.info("Topics table already seeded (%d rows) — skipping.", existing_count)
+        _backfill_year_groups(db)
         return
 
     topics = [Topic(**entry) for entry in CURRICULUM_TAXONOMY]
     db.bulk_save_objects(topics)
     db.commit()
     logger.info("Seeded %d curriculum topics.", len(topics))
+
+
+def _backfill_year_groups(db: Session) -> None:
+    """Fill in year_group on topics seeded before the column existed.
+
+    seed_topics only inserts into an empty table, so a database already
+    holding the curriculum would otherwise keep year_group NULL forever after
+    the migration added it — and every generated lesson would be pitched at
+    "unspecified" rather than a year. Runs on every startup and is idempotent:
+    it only touches rows where the value is missing.
+    """
+    missing = db.query(Topic).filter(Topic.year_group.is_(None)).all()
+    if not missing:
+        return
+
+    updated = 0
+    for topic in missing:
+        year = _YEAR_GROUPS.get(topic.topic_name)
+        if year is not None:
+            topic.year_group = year
+            updated += 1
+
+    if updated:
+        db.commit()
+        logger.info("Backfilled year_group on %d topics.", updated)

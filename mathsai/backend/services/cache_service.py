@@ -15,12 +15,12 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from models import LessonCache, QuestionCache, RegenerationLog, Topic
-from schemas import LessonSchema, QuestionSetSchema
+from schemas import LESSON_SCHEMA_VERSION, LessonSchema, QuestionSetSchema
 from services import ai_service
 
 logger = logging.getLogger("mathsai")
 
-VALID_DIFFICULTIES = {"Foundation", "Developing", "Extending"}
+VALID_DIFFICULTIES = {"Fluency", "Reasoning", "Problem-solving"}
 
 
 class TopicNotFoundError(Exception):
@@ -80,10 +80,8 @@ def get_lesson(db: Session, topic_id: int, force_refresh: bool = False) -> dict:
         raise
 
     row = existing if existing is not None else LessonCache(topic_id=topic.id)
-    row.lesson_notes = validated.lesson_notes
-    row.worked_examples = json.dumps([e.model_dump() for e in validated.worked_examples])
-    row.key_vocabulary = json.dumps([v.model_dump() for v in validated.key_vocabulary])
-    row.common_errors = json.dumps([c.model_dump() for c in validated.common_errors])
+    row.content = validated.model_dump_json()
+    row.schema_version = LESSON_SCHEMA_VERSION
     row.generated_at = datetime.utcnow()
     row.model_used = ai_service.MODEL
     row.reviewed = False
@@ -98,18 +96,23 @@ def get_lesson(db: Session, topic_id: int, force_refresh: bool = False) -> dict:
 
 
 def _generate_and_validate_lesson(topic: Topic) -> LessonSchema:
-    raw = ai_service.generate_lesson(
-        topic.key_stage, topic.topic_name, topic.edexcel_ref, topic_id=topic.id
-    )
+    def _generate():
+        return ai_service.generate_lesson(
+            topic.key_stage,
+            topic.topic_name,
+            topic.strand,
+            year_group=topic.year_group,
+            topic_id=topic.id,
+        )
+
+    raw = _generate()
     try:
         return LessonSchema.model_validate(raw)
     except ValidationError as exc:
         logger.error(
             "Lesson validation failed (attempt 1) topic_id=%d: %s", topic.id, exc
         )
-        raw_retry = ai_service.generate_lesson(
-            topic.key_stage, topic.topic_name, topic.edexcel_ref, topic_id=topic.id
-        )
+        raw_retry = _generate()
         try:
             return LessonSchema.model_validate(raw_retry)
         except ValidationError as exc2:
@@ -122,18 +125,53 @@ def _generate_and_validate_lesson(topic: Topic) -> LessonSchema:
 
 
 def _lesson_row_to_dict(row: LessonCache, stale: bool = False) -> dict:
-    return {
+    """Render a cached row, whichever schema version it was written under.
+
+    Rows from before the teaching-sequence rewrite are still served — they
+    contain real, usable content — flagged `outdated_format` so the UI can
+    offer regeneration. Regenerating them automatically would spend credits
+    across every topic already generated without anyone asking.
+    """
+    version = row.schema_version or 1
+    result = {
         "topic_id": row.topic_id,
-        "lesson_notes": row.lesson_notes,
-        "worked_examples": json.loads(row.worked_examples),
-        "key_vocabulary": json.loads(row.key_vocabulary),
-        "common_errors": json.loads(row.common_errors),
+        "schema_version": version,
+        "outdated_format": version < LESSON_SCHEMA_VERSION,
         "generated_at": row.generated_at,
         "model_used": row.model_used,
         "reviewed": row.reviewed,
         "reviewed_at": row.reviewed_at,
         "stale": stale,
     }
+
+    if row.content:
+        result.update(json.loads(row.content))
+        return result
+
+    # Schema version 1: four flat columns.
+    result.update(
+        {
+            "lesson_notes": row.lesson_notes,
+            "worked_examples": json.loads(row.worked_examples or "[]"),
+            "key_vocabulary": json.loads(row.key_vocabulary or "[]"),
+            "common_errors": json.loads(row.common_errors or "[]"),
+        }
+    )
+    return result
+
+
+def _cached_common_errors(db: Session, topic_id: int) -> Optional[list]:
+    """The misconceptions from this topic's cached lesson, if there is one.
+
+    Feeds question generation so distractors can be built from misconceptions
+    the lesson actually identified, rather than arbitrary wrong answers.
+    Returns None when no lesson exists yet — questions are still generated,
+    just without the diagnostic targeting.
+    """
+    row = db.query(LessonCache).filter(LessonCache.topic_id == topic_id).first()
+    if row is None:
+        return None
+    return _lesson_row_to_dict(row).get("common_errors") or None
 
 
 def mark_lesson_reviewed(db: Session, topic_id: int) -> dict:
@@ -182,7 +220,9 @@ def get_questions(
         _log_regeneration(db, topic.id, f"question:{difficulty}")
 
     try:
-        validated = _generate_and_validate_questions(topic, difficulty)
+        validated = _generate_and_validate_questions(
+            topic, difficulty, _cached_common_errors(db, topic.id)
+        )
     except ai_service.AIGenerationError:
         if existing is not None:
             logger.error(
@@ -297,10 +337,21 @@ def _validate_questions_or_none(raw) -> Optional[QuestionSetSchema]:
     return validated
 
 
-def _generate_and_validate_questions(topic: Topic, difficulty: str) -> QuestionSetSchema:
-    raw = ai_service.generate_questions(
-        topic.key_stage, topic.topic_name, difficulty, topic_id=topic.id
-    )
+def _generate_and_validate_questions(
+    topic: Topic, difficulty: str, common_errors: Optional[list] = None
+) -> QuestionSetSchema:
+    def _generate():
+        return ai_service.generate_questions(
+            topic.key_stage,
+            topic.topic_name,
+            difficulty,
+            strand=topic.strand,
+            year_group=topic.year_group,
+            common_errors=common_errors,
+            topic_id=topic.id,
+        )
+
+    raw = _generate()
     validated = _validate_questions_or_none(raw)
     if validated is not None:
         return validated
@@ -311,9 +362,7 @@ def _generate_and_validate_questions(topic: Topic, difficulty: str) -> QuestionS
         topic.id,
         difficulty,
     )
-    raw_retry = ai_service.generate_questions(
-        topic.key_stage, topic.topic_name, difficulty, topic_id=topic.id
-    )
+    raw_retry = _generate()
     validated_retry = _validate_questions_or_none(raw_retry)
     if validated_retry is not None:
         return validated_retry

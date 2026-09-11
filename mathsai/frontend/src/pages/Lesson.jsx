@@ -1,85 +1,32 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import ConfirmDialog from "../components/ConfirmDialog";
-import LessonPanel from "../components/LessonPanel";
+import TeachingSequence from "../components/TeachingSequence.jsx";
+import AdaptivePanel from "../components/AdaptivePanel.jsx";
+import ReferencePanel from "../components/ReferencePanel.jsx";
+import LegacyLessonPanel from "../components/LegacyLessonPanel.jsx";
+import OutdatedFormatNotice from "../components/OutdatedFormatNotice.jsx";
 import ReviewedMarker from "../components/ReviewedMarker";
 import LoadingNotice from "../components/LoadingNotice";
+import LessonActions from "../components/LessonActions.jsx";
 import {
   exportLessonPdf,
   getLesson,
   getTopic,
-  logTaught,
   markLessonReviewed,
   refreshLesson,
 } from "../api/client";
 
+// Ordered by when you need them: Teach while teaching, Adapt while planning
+// against a class list, Reference when you want a definition.
 const TABS = [
-  { key: "notes", label: "Lesson Notes" },
-  { key: "vocabulary", label: "Key Vocabulary" },
-  { key: "errors", label: "Common Errors" },
+  { key: "teach", label: "Teach" },
+  { key: "adapt", label: "Adapt" },
+  { key: "reference", label: "Reference" },
 ];
 
-const DIFFICULTY_TIERS = ["Foundation", "Developing", "Extending"];
+const DIFFICULTY_TIERS = ["Fluency", "Reasoning", "Problem-solving"];
 
-function todayISODate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function MarkAsTaughtForm({ topicId, onDone }) {
-  const [classLabel, setClassLabel] = useState("");
-  const [taughtDate, setTaughtDate] = useState(todayISODate());
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await logTaught({
-        topic_id: Number(topicId),
-        taught_date: taughtDate,
-        class_label: classLabel || null,
-      });
-      onDone();
-    } catch {
-      setError("Couldn't log this — please try again.");
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-3"
-    >
-      <input
-        type="date"
-        value={taughtDate}
-        onChange={(e) => setTaughtDate(e.target.value)}
-        className="rounded border border-border bg-background px-2 py-1 text-sm text-text-primary"
-        required
-      />
-      <input
-        type="text"
-        value={classLabel}
-        onChange={(e) => setClassLabel(e.target.value)}
-        placeholder="Class label (e.g. Year 9 Set 2)"
-        className="min-w-[10rem] flex-1 rounded border border-border bg-background px-2 py-1 text-sm text-text-primary placeholder:text-text-secondary"
-      />
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded bg-accent px-3 py-1 text-sm font-semibold text-background disabled:opacity-50"
-      >
-        {submitting ? "Logging…" : "Log"}
-      </button>
-      {error && <p className="w-full text-xs text-tier-extending">{error}</p>}
-    </form>
-  );
-}
-
-/** Lesson view — full lesson package for a selected topic (CLAUDE.md Lesson Page). */
 export default function Lesson() {
   const { topicId } = useParams();
   const navigate = useNavigate();
@@ -88,7 +35,7 @@ export default function Lesson() {
   const [lesson, setLesson] = useState(null);
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [errorMessage, setErrorMessage] = useState("");
-  const [activeTab, setActiveTab] = useState("notes");
+  const [activeTab, setActiveTab] = useState("teach");
   const [regenerating, setRegenerating] = useState(false);
   const [taughtFormOpen, setTaughtFormOpen] = useState(false);
   const [taughtJustLogged, setTaughtJustLogged] = useState(false);
@@ -215,61 +162,43 @@ export default function Lesson() {
         ))}
       </div>
 
-      <LessonPanel lesson={lesson} tab={activeTab} />
-
-      <div className="mt-10 flex flex-col gap-4 border-t border-border pt-6">
-        <div className="flex flex-wrap gap-2">
-          {DIFFICULTY_TIERS.map((tier) => (
-            <button
-              key={tier}
-              onClick={() => navigate(`/questions/${topicId}/${tier}`)}
-              className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/40"
-            >
-              {tier} Questions
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => setConfirmRegenerateOpen(true)}
-            disabled={regenerating}
-            className="rounded border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
-          >
-            {regenerating ? "Regenerating…" : "Regenerate"}
-          </button>
-
-          <button
-            onClick={handleExportPdf}
-            disabled={exporting}
-            className="rounded border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
-          >
-            {exporting ? "Exporting…" : "Export to PDF"}
-          </button>
-
-          {!taughtFormOpen && !taughtJustLogged && (
-            <button
-              onClick={() => setTaughtFormOpen(true)}
-              className="rounded bg-tier-foundation/10 px-3 py-1.5 text-sm font-semibold text-tier-foundation transition-colors hover:bg-tier-foundation/20"
-            >
-              Mark as Taught
-            </button>
+      {lesson.outdated_format ? (
+        <>
+          <OutdatedFormatNotice onRegenerate={() => setConfirmRegenerateOpen(true)} busy={regenerating} />
+          {activeTab === "reference" ? (
+            <ReferencePanel lesson={lesson} />
+          ) : (
+            <LegacyLessonPanel lesson={lesson} />
           )}
-          {taughtJustLogged && (
-            <span className="text-sm text-tier-foundation">Logged &#x2713;</span>
+        </>
+      ) : (
+        <>
+          {activeTab === "teach" && (
+            <TeachingSequence
+              lesson={lesson}
+              onGoToQuestions={(tier) => navigate(`/questions/${topicId}/${tier}`)}
+            />
           )}
-        </div>
+          {activeTab === "adapt" && <AdaptivePanel adaptive={lesson.adaptive_teaching} />}
+          {activeTab === "reference" && <ReferencePanel lesson={lesson} />}
+        </>
+      )}
 
-        {taughtFormOpen && (
-          <MarkAsTaughtForm
-            topicId={topicId}
-            onDone={() => {
-              setTaughtFormOpen(false);
-              setTaughtJustLogged(true);
-            }}
-          />
-        )}
-      </div>
+      <LessonActions
+        topicId={topicId}
+        navigate={navigate}
+        regenerating={regenerating}
+        onRegenerate={() => setConfirmRegenerateOpen(true)}
+        exporting={exporting}
+        onExportPdf={handleExportPdf}
+        taughtFormOpen={taughtFormOpen}
+        setTaughtFormOpen={setTaughtFormOpen}
+        taughtJustLogged={taughtJustLogged}
+        onTaughtLogged={() => {
+          setTaughtFormOpen(false);
+          setTaughtJustLogged(true);
+        }}
+      />
 
       <ConfirmDialog
         open={confirmRegenerateOpen}

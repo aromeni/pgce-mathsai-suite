@@ -26,7 +26,7 @@ logger = logging.getLogger("mathsai")
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
-DIFFICULTY_TIERS = ["Foundation", "Developing", "Extending"]
+DIFFICULTY_TIERS = ["Fluency", "Reasoning", "Problem-solving"]
 
 esc = html.escape
 
@@ -57,9 +57,9 @@ PDF_STYLE = """
   .example h4, .question-card h4 { margin: 0 0 6px 0; font-size: 11pt; color: #0d9488; }
   .tier-badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
                 font-size: 9pt; font-weight: bold; }
-  .tier-Foundation { background: #dcfce7; color: #166534; }
-  .tier-Developing { background: #fef9c3; color: #854d0e; }
-  .tier-Extending { background: #fee2e2; color: #991b1b; }
+  .tier-Fluency { background: #dcfce7; color: #166534; }
+  .tier-Reasoning { background: #fef9c3; color: #854d0e; }
+  .tier-Problem-solving { background: #fee2e2; color: #991b1b; }
   .answer { background: #f7f7f7; border-left: 3px solid #0d9488;
             padding: 6px 10px; margin-top: 6px; font-size: 10pt; }
   .tier-section { page-break-before: always; }

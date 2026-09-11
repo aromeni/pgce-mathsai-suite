@@ -9,23 +9,12 @@ from unittest.mock import patch
 import pytest
 
 from models import LessonCache, QuestionCache, RegenerationLog, Topic
+from schemas import LESSON_SCHEMA_VERSION, QuestionItem
 from services import ai_service, cache_service
 
-VALID_LESSON_RAW = {
-    "lesson_notes": "# Quadratic Equations\n\nLearning objectives...",
-    "worked_examples": [
-        {
-            "title": "Example 1 — factorising",
-            "problem": "x^2 - 5x + 6 = 0",
-            "solution": "(x-2)(x-3) = 0, so x = 2 or x = 3",
-            "teaching_note": "Check the factor pair multiplies to +6 and sums to -5",
-        }
-    ],
-    "key_vocabulary": [{"term": "quadratic", "definition": "a degree-2 polynomial equation"}],
-    "common_errors": [{"error": "sign slip when factorising", "correction": "recheck the factor pair"}],
-}
+from lesson_fixtures import VALID_LESSON_RAW
 
-INVALID_LESSON_RAW = {"lesson_notes": "missing every other required field"}
+INVALID_LESSON_RAW = {"topic_introduction": "missing every other required field"}
 
 VALID_QUESTIONS_RAW = [
     {
@@ -41,7 +30,9 @@ VALID_QUESTIONS_RAW = [
 # cache_service round-trips every question through QuestionItem, which
 # always emits "options" (None when the AI response didn't include one) —
 # so the stored/returned shape has one more key than the raw AI response.
-EXPECTED_QUESTIONS_STORED = [{**VALID_QUESTIONS_RAW[0], "options": None}]
+# Derived from the schema rather than hand-written, so adding an optional
+# question field does not silently break this expectation.
+EXPECTED_QUESTIONS_STORED = [QuestionItem(**VALID_QUESTIONS_RAW[0]).model_dump()]
 
 INVALID_QUESTIONS_RAW = [{"question_number": 1}]
 
@@ -69,11 +60,12 @@ def test_get_lesson_cache_miss_generates_and_stores(db_session, topic):
         result = cache_service.get_lesson(db_session, topic.id)
 
     assert mock_gen.call_count == 1
-    assert result["lesson_notes"] == VALID_LESSON_RAW["lesson_notes"]
+    assert result["topic_introduction"] == VALID_LESSON_RAW["topic_introduction"]
     assert result["stale"] is False
 
     row = db_session.query(LessonCache).filter_by(topic_id=topic.id).one()
-    assert json.loads(row.worked_examples) == VALID_LESSON_RAW["worked_examples"]
+    assert json.loads(row.content)["i_do"] == VALID_LESSON_RAW["i_do"]
+    assert row.schema_version == LESSON_SCHEMA_VERSION
     assert row.reviewed is False
     assert row.model_used == ai_service.MODEL
 
@@ -102,7 +94,7 @@ def test_get_lesson_retries_once_on_validation_failure_then_succeeds(db_session,
         result = cache_service.get_lesson(db_session, topic.id)
 
     assert mock_gen.call_count == 2
-    assert result["lesson_notes"] == VALID_LESSON_RAW["lesson_notes"]
+    assert result["topic_introduction"] == VALID_LESSON_RAW["topic_introduction"]
 
 
 def test_get_lesson_raises_after_validation_fails_twice_and_stores_nothing(db_session, topic):
@@ -126,7 +118,7 @@ def test_get_lesson_serves_stale_cache_when_refresh_fails(db_session, topic):
         result = cache_service.get_lesson(db_session, topic.id, force_refresh=True)
 
     assert result["stale"] is True
-    assert result["lesson_notes"] == VALID_LESSON_RAW["lesson_notes"]
+    assert result["topic_introduction"] == VALID_LESSON_RAW["topic_introduction"]
 
 
 def test_get_lesson_unknown_topic_raises(db_session):
@@ -139,27 +131,27 @@ def test_get_lesson_unknown_topic_raises(db_session):
 
 def test_get_questions_cache_miss_generates_and_stores(db_session, topic):
     with patch.object(ai_service, "generate_questions", return_value=VALID_QUESTIONS_RAW) as mock_gen:
-        result = cache_service.get_questions(db_session, topic.id, "Foundation")
+        result = cache_service.get_questions(db_session, topic.id, "Fluency")
 
     assert mock_gen.call_count == 1
     assert result == EXPECTED_QUESTIONS_STORED
 
-    row = db_session.query(QuestionCache).filter_by(topic_id=topic.id, difficulty="Foundation").one()
+    row = db_session.query(QuestionCache).filter_by(topic_id=topic.id, difficulty="Fluency").one()
     assert row.reviewed is False
 
 
 def test_get_questions_cache_hit_does_not_call_ai_again(db_session, topic):
     with patch.object(ai_service, "generate_questions", return_value=VALID_QUESTIONS_RAW) as mock_gen:
-        cache_service.get_questions(db_session, topic.id, "Foundation")
-        cache_service.get_questions(db_session, topic.id, "Foundation")
+        cache_service.get_questions(db_session, topic.id, "Fluency")
+        cache_service.get_questions(db_session, topic.id, "Fluency")
 
     assert mock_gen.call_count == 1
 
 
 def test_get_questions_different_tiers_cache_independently(db_session, topic):
     with patch.object(ai_service, "generate_questions", return_value=VALID_QUESTIONS_RAW) as mock_gen:
-        cache_service.get_questions(db_session, topic.id, "Foundation")
-        cache_service.get_questions(db_session, topic.id, "Extending")
+        cache_service.get_questions(db_session, topic.id, "Fluency")
+        cache_service.get_questions(db_session, topic.id, "Problem-solving")
 
     assert mock_gen.call_count == 2
     assert db_session.query(QuestionCache).filter_by(topic_id=topic.id).count() == 2
@@ -174,7 +166,7 @@ def test_get_questions_retries_once_on_validation_failure_then_succeeds(db_sessi
     with patch.object(
         ai_service, "generate_questions", side_effect=[INVALID_QUESTIONS_RAW, VALID_QUESTIONS_RAW]
     ) as mock_gen:
-        result = cache_service.get_questions(db_session, topic.id, "Foundation")
+        result = cache_service.get_questions(db_session, topic.id, "Fluency")
 
     assert mock_gen.call_count == 2
     assert result == EXPECTED_QUESTIONS_STORED
@@ -182,12 +174,12 @@ def test_get_questions_retries_once_on_validation_failure_then_succeeds(db_sessi
 
 def test_get_questions_serves_stale_cache_when_refresh_fails(db_session, topic):
     with patch.object(ai_service, "generate_questions", return_value=VALID_QUESTIONS_RAW):
-        cache_service.get_questions(db_session, topic.id, "Foundation")
+        cache_service.get_questions(db_session, topic.id, "Fluency")
 
     with patch.object(
         ai_service, "generate_questions", side_effect=ai_service.AIGenerationError("down")
     ):
-        result = cache_service.get_questions(db_session, topic.id, "Foundation", force_refresh=True)
+        result = cache_service.get_questions(db_session, topic.id, "Fluency", force_refresh=True)
 
     assert result == EXPECTED_QUESTIONS_STORED
 
@@ -199,7 +191,7 @@ def test_get_questions_empty_response_retries_then_succeeds(db_session, topic):
     with patch.object(
         ai_service, "generate_questions", side_effect=[[], VALID_QUESTIONS_RAW]
     ) as mock_gen:
-        result = cache_service.get_questions(db_session, topic.id, "Foundation")
+        result = cache_service.get_questions(db_session, topic.id, "Fluency")
 
     assert mock_gen.call_count == 2
     assert result == EXPECTED_QUESTIONS_STORED
@@ -208,7 +200,7 @@ def test_get_questions_empty_response_retries_then_succeeds(db_session, topic):
 def test_get_questions_empty_response_twice_raises_and_stores_nothing(db_session, topic):
     with patch.object(ai_service, "generate_questions", side_effect=[[], []]) as mock_gen:
         with pytest.raises(ai_service.AIGenerationError):
-            cache_service.get_questions(db_session, topic.id, "Foundation")
+            cache_service.get_questions(db_session, topic.id, "Fluency")
 
     assert mock_gen.call_count == 2
     assert db_session.query(QuestionCache).filter_by(topic_id=topic.id).count() == 0
@@ -240,12 +232,12 @@ def test_get_lesson_force_refresh_logs_even_when_generation_fails(db_session, to
 
 def test_get_questions_force_refresh_writes_regeneration_log(db_session, topic):
     with patch.object(ai_service, "generate_questions", return_value=VALID_QUESTIONS_RAW):
-        cache_service.get_questions(db_session, topic.id, "Foundation")  # cache miss
-        cache_service.get_questions(db_session, topic.id, "Foundation", force_refresh=True)
+        cache_service.get_questions(db_session, topic.id, "Fluency")  # cache miss
+        cache_service.get_questions(db_session, topic.id, "Fluency", force_refresh=True)
 
     logs = db_session.query(RegenerationLog).filter_by(topic_id=topic.id).all()
     assert len(logs) == 1
-    assert logs[0].content_type == "question:Foundation"
+    assert logs[0].content_type == "question:Fluency"
 
 
 # --- Phase 9: reviewed workflow ---------------------------------------------
@@ -275,30 +267,30 @@ def test_mark_lesson_reviewed_unknown_topic_raises(db_session):
 
 def test_mark_questions_reviewed_sets_reviewed_flag(db_session, topic):
     with patch.object(ai_service, "generate_questions", return_value=VALID_QUESTIONS_RAW):
-        cache_service.get_questions(db_session, topic.id, "Foundation")
+        cache_service.get_questions(db_session, topic.id, "Fluency")
 
-    result = cache_service.mark_questions_reviewed(db_session, topic.id, "Foundation")
+    result = cache_service.mark_questions_reviewed(db_session, topic.id, "Fluency")
 
     assert result["reviewed"] is True
     assert result["reviewed_at"] is not None
-    row = db_session.query(QuestionCache).filter_by(topic_id=topic.id, difficulty="Foundation").one()
+    row = db_session.query(QuestionCache).filter_by(topic_id=topic.id, difficulty="Fluency").one()
     assert row.reviewed is True
 
 
 def test_mark_questions_reviewed_raises_when_not_cached(db_session, topic):
     with pytest.raises(cache_service.ContentNotCachedError):
-        cache_service.mark_questions_reviewed(db_session, topic.id, "Foundation")
+        cache_service.mark_questions_reviewed(db_session, topic.id, "Fluency")
 
 
 def test_get_questions_status_returns_none_when_not_cached(db_session, topic):
-    assert cache_service.get_questions_status(db_session, topic.id, "Foundation") is None
+    assert cache_service.get_questions_status(db_session, topic.id, "Fluency") is None
 
 
 def test_get_questions_status_returns_metadata_when_cached(db_session, topic):
     with patch.object(ai_service, "generate_questions", return_value=VALID_QUESTIONS_RAW):
-        cache_service.get_questions(db_session, topic.id, "Foundation")
+        cache_service.get_questions(db_session, topic.id, "Fluency")
 
-    status = cache_service.get_questions_status(db_session, topic.id, "Foundation")
+    status = cache_service.get_questions_status(db_session, topic.id, "Fluency")
     assert status["reviewed"] is False
-    assert status["difficulty"] == "Foundation"
+    assert status["difficulty"] == "Fluency"
     assert status["topic_id"] == topic.id

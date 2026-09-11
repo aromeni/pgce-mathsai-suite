@@ -33,7 +33,7 @@ LESSON_DICT = {
 }
 
 QUESTIONS_BY_TIER = {
-    "Foundation": [
+    "Fluency": [
         {
             "question_number": 1,
             "type": "short_answer",
@@ -44,7 +44,7 @@ QUESTIONS_BY_TIER = {
             "marks": 1,
         }
     ],
-    "Developing": [
+    "Reasoning": [
         {
             "question_number": 1,
             "type": "multiple_choice",
@@ -55,7 +55,7 @@ QUESTIONS_BY_TIER = {
             "marks": 1,
         }
     ],
-    "Extending": [
+    "Problem-solving": [
         {
             "question_number": 1,
             "type": "exam_style",

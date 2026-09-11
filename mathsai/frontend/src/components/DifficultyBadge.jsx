@@ -1,10 +1,11 @@
 const TIER_STYLES = {
-  Foundation: "border-tier-foundation/40 text-tier-foundation bg-tier-foundation/10",
-  Developing: "border-tier-developing/40 text-tier-developing bg-tier-developing/10",
-  Extending: "border-tier-extending/40 text-tier-extending bg-tier-extending/10",
+  Fluency: "border-tier-fluency/40 text-tier-fluency bg-tier-fluency/10",
+  Reasoning: "border-tier-reasoning/40 text-tier-reasoning bg-tier-reasoning/10",
+  "Problem-solving":
+    "border-tier-problem-solving/40 text-tier-problem-solving bg-tier-problem-solving/10",
 };
 
-/** Difficulty tier badge (CLAUDE.md Aesthetic — tier colours). */
+/** Practice tier badge (CLAUDE.md Aesthetic — tier colours). */
 export default function DifficultyBadge({ tier }) {
   const styles = TIER_STYLES[tier] ?? "border-border text-text-secondary";
 

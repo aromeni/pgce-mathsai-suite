@@ -10,10 +10,12 @@ export default {
         accent: "#00d4b8",
         "text-primary": "#e8e8f0",
         "text-secondary": "#7070a0",
+        // Practice tiers, named for Edexcel's Assessment Objectives. Colours
+        // carry over unchanged from Foundation/Developing/Extending.
         tier: {
-          foundation: "#4ade80",
-          developing: "#facc15",
-          extending: "#f87171",
+          fluency: "#4ade80",
+          reasoning: "#facc15",
+          "problem-solving": "#f87171",
         },
       },
       fontFamily: {

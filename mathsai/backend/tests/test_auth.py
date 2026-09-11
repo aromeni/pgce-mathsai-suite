@@ -34,7 +34,7 @@ def test_login_page_is_reachable_without_login(anon_client):
     [
         "/api/topics",
         "/api/lessons/1",
-        "/api/questions/1/Foundation",
+        "/api/questions/1/Fluency",
         "/api/progress",
         "/api/export/lesson/1/pdf",
     ],
@@ -49,7 +49,7 @@ def test_regenerate_routes_require_authentication(anon_client):
     """The specific routes that cost money on a single request."""
     assert anon_client.post("/api/lessons/1/refresh").status_code == 401
     assert (
-        anon_client.post("/api/questions/1/Foundation/refresh").status_code == 401
+        anon_client.post("/api/questions/1/Fluency/refresh").status_code == 401
     )
 
 

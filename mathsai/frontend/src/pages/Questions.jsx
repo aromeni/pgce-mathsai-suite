@@ -14,7 +14,7 @@ import {
   refreshQuestions,
 } from "../api/client";
 
-const DIFFICULTY_TIERS = ["Foundation", "Developing", "Extending"];
+const DIFFICULTY_TIERS = ["Fluency", "Reasoning", "Problem-solving"];
 
 /** Question display by difficulty tier (CLAUDE.md Questions Page). */
 export default function Questions() {
@@ -150,7 +150,7 @@ export default function Questions() {
         <button
           onClick={handleExportPdf}
           disabled={exporting}
-          title="Exports Foundation, Developing and Extending in one PDF"
+          title="Exports Fluency, Reasoning and Problem-solving in one PDF"
           className="rounded border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
         >
           {exporting ? "Exporting…" : "Export to PDF"}
