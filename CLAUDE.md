@@ -819,7 +819,7 @@ This is the first slice of a broader move toward automating more of the teaching
 - Database sessions use dependency injection via FastAPI `Depends`.
 - All AI prompts are defined as constants or templates in `ai_service.py`, never hardcoded inline in routes.
 - SQLite WAL mode should be enabled for better concurrent read performance.
-- Environment variables used for: `ANTHROPIC_API_KEY`, `DATABASE_URL`, `ENVIRONMENT`. No password/auth variable is needed — see Production Hardening, Network access and authentication.
+- Environment variables used for: `ANTHROPIC_API_KEY`, `DATABASE_URL`, `ENVIRONMENT`, `APP_PASSWORD_HASH`, `SECRET_KEY`, `FRONTEND_ORIGIN`. The last two auth variables are required in production and optional locally — see Production Hardening, Network access and authentication.
 - Use `python-dotenv` for local `.env` loading.
 - Include a `.env.example` file.
 - All JSON stored in SQLite TEXT fields must be validated on write and parsed on read.
@@ -847,7 +847,21 @@ This system will be reachable beyond a single laptop, and it calls a metered ext
 
 ### Network access and authentication
 
-Resolved: Tailscale-only, no public hosting, no password layer. This reaches every device on the tailnet without putting the app or the Anthropic API key on the open internet at all — the network itself is the perimeter. The public-hosting-with-password-auth alternative that was left open earlier no longer applies now the project is confirmed personal-use only; if that changes later, revisit it then rather than carrying unused conditional logic in the codebase now.
+**Superseded — see the revised decision below.** ~~Resolved: Tailscale-only, no public hosting, no password layer. This reaches every device on the tailnet without putting the app or the Anthropic API key on the open internet at all — the network itself is the perimeter. The public-hosting-with-password-auth alternative that was left open earlier no longer applies now the project is confirmed personal-use only; if that changes later, revisit it then rather than carrying unused conditional logic in the codebase now.~~
+
+**Revised: public hosting with single-password auth.** The Tailscale decision assumed every device could join the tailnet. It cannot — the school laptop is MDM-locked, so nothing can be installed on it and there is no browser-only route onto a tailnet. Since the app has to be usable from that machine, it is publicly hosted and the perimeter moves into the application. This is exactly the revisit the original note called for, not a reversal of it.
+
+Implemented in `backend/auth.py`:
+
+- `APP_PASSWORD_HASH` holds a salted stdlib **scrypt** hash — never the password. `generate_password_hash.py` produces it via `getpass`.
+- Session state is a signed cookie (Starlette `SessionMiddleware`, `SECRET_KEY`): `HttpOnly`, `SameSite=Lax`, `Secure` in production, 30-day lifetime.
+- A raw-ASGI middleware gates every path except `/login`, `/api/auth/login`, and `/api/health`. Raw ASGI rather than `BaseHTTPMiddleware` so it stays out of the response body path, which matters for the binary PDF export responses. `/assets/*` is gated too — the SPA bundle is never served to an anonymous visitor, which is why the login page is server-rendered HTML outside the bundle.
+- Login failures are throttled to 10 per 15 minutes per IP, in-memory. Single user, single container, so a shared store would be more operational surface than the problem justifies; the cost is that the window resets on restart.
+- **Fail-closed:** `ENVIRONMENT=production` without `APP_PASSWORD_HASH`/`SECRET_KEY` raises at import and the app does not start. The failure this prevents — a public URL with open `force_refresh` routes spending Anthropic credits — is otherwise silent until the bill arrives.
+
+The threat model is narrow and worth stating so the design is not over-read: this is cost control and privacy for one known user, not multi-tenant identity. If this is ever shared with a department it needs rethinking, not extending.
+
+No `APP_PASSWORD` (plaintext) variable exists anywhere, and the Code Quality note below that says no auth variable is needed is superseded by this section.
 
 ### Secrets management
 

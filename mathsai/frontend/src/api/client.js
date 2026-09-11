@@ -7,6 +7,23 @@ const client = axios.create({
   baseURL: "/api",
 });
 
+// A 401 means the session cookie expired or was cleared server-side. The
+// login page is server-rendered and lives outside this bundle (see
+// backend/auth.py), so the only recovery is a full navigation rather than a
+// React route change. Guarded against redirect loops if /login itself 401s.
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && window.location.pathname !== "/login") {
+      window.location.assign("/login");
+    }
+    return Promise.reject(error);
+  },
+);
+
+export const logout = () =>
+  client.post("/auth/logout").then(() => window.location.assign("/login"));
+
 export const getTopics = () => client.get("/topics").then((res) => res.data);
 
 export const getTopicsByKeyStage = (keyStage) =>
