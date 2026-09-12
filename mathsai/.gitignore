@@ -11,6 +11,11 @@ venv/
 *.db
 *.db-shm
 *.db-wal
+# Pre-migration backups — README tells you to take one before every
+# migration, so this filename recurs. The repo is public and the .db
+# holds everything generated and taught.
+*.db.bak
+*.bak
 
 # Logs
 *.log
