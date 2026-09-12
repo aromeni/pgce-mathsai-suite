@@ -7,6 +7,7 @@ import ReferencePanel from "../components/ReferencePanel.jsx";
 import LegacyLessonPanel from "../components/LegacyLessonPanel.jsx";
 import OutdatedFormatNotice from "../components/OutdatedFormatNotice.jsx";
 import ReviewedMarker from "../components/ReviewedMarker";
+import ContentProvenance from "../components/ContentProvenance.jsx";
 import LoadingNotice from "../components/LoadingNotice";
 import LessonActions from "../components/LessonActions.jsx";
 import {
@@ -153,6 +154,12 @@ export default function Lesson() {
             reviewed={lesson.reviewed}
             onMarkReviewed={handleMarkReviewed}
             marking={markingReviewed}
+          />
+          <ContentProvenance
+            generatedAt={lesson.generated_at}
+            modelUsed={lesson.model_used}
+            schemaVersion={lesson.schema_version}
+            outdated={lesson.outdated_format}
           />
         </div>
       </div>
