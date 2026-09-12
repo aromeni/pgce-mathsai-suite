@@ -22,7 +22,18 @@ from anthropic import Anthropic, APIStatusError, APITimeoutError, RateLimitError
 
 logger = logging.getLogger("mathsai")
 
-MODEL = "claude-sonnet-5"
+# Opus rather than Sonnet because the failure mode that matters here is
+# content failure — well-formed JSON containing wrong mathematics — which
+# CLAUDE.md correctly says structural validation cannot catch. The design
+# leans on a qualified teacher as the verifier, but mark-scheme allocation is
+# a skill a trainee is still building, so model capability is standing in for
+# a check that is not yet fully happening. Mathematical reasoning is exactly
+# where Opus pulls ahead.
+#
+# Cost is a one-off per topic: `model_used` is recorded per cache row and
+# content is never regenerated unless asked, so dropping back to Sonnet later
+# for incremental topics leaves everything already cached untouched.
+MODEL = "claude-opus-5"
 
 # CLAUDE.md proposed 30s as "reasonable for one generation". Measured against
 # the real workload it is not: a KS4 lesson returns thousands of output
@@ -30,9 +41,20 @@ MODEL = "claude-sonnet-5"
 # retried, timed out again, and surfaced a 503 after ~62s — while still
 # being billed for both discarded completions, since the model had generated
 # them in full before the client hung up.
-REQUEST_TIMEOUT_SECONDS = 120.0
+REQUEST_TIMEOUT_SECONDS = 240.0
 RETRY_BACKOFF_SECONDS = 2.0
-MAX_TOKENS = 8000
+
+# Thinking tokens count against this budget, so the 8000 that comfortably fit
+# a non-thinking Sonnet response is no longer enough headroom.
+MAX_TOKENS = 16000
+
+# Thinking stays ON. Disabling it on Opus 5 is a documented trap: the model
+# can leak <thinking> tags into the response, and since every response here is
+# parsed as strict JSON that means a validation failure and a retry. Depth is
+# controlled with `effort` instead. "high" is the default and the usual sweet
+# spot; "max" would buy a little more care on hard problems at a noticeably
+# higher token cost.
+EFFORT = "high"
 
 _client: Optional[Anthropic] = None
 
@@ -432,7 +454,8 @@ def _call_with_retry(system: str, user_prompt: str, log_context: Optional[dict] 
             ).messages.stream(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                thinking={"type": "disabled"},
+                thinking={"type": "adaptive"},
+                output_config={"effort": EFFORT},
                 system=system,
                 messages=[{"role": "user", "content": user_prompt}],
             ) as stream:

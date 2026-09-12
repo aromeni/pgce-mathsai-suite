@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Pre-generate lesson and question content so it is cached before you need it.
 
-Generation takes ~40s per lesson and ~25s per question tier. That is fine the
-evening before, and not fine five minutes before a lesson — so this walks the
+Generation takes ~2.5 minutes per lesson and ~45s per question tier. That is
+fine the evening before, and not fine five minutes before a lesson — so this walks the
 topics you choose and asks the server to generate each one now.
 
 It drives the LIVE API over HTTP rather than writing to a database directly.
@@ -39,11 +39,15 @@ except ImportError:  # pragma: no cover - dependency hint only
 
 TIERS = ("Fluency", "Reasoning", "Problem-solving")
 
-# Rough figures for the estimate only — actual cost depends on the topic. Based
-# on measured generation: a lesson is three calls totalling ~13k output tokens,
-# a question tier one call of ~3k, at Sonnet pricing.
-COST_PER_LESSON_GBP = 0.11
-COST_PER_TIER_GBP = 0.025
+# Rough figures for the estimate only — actual cost depends on the topic.
+# Measured on Opus 5 at effort=high with adaptive thinking: one lesson is
+# three concurrent calls totalling ~4.3k input / ~27.7k output tokens, about
+# $0.71. Thinking tokens bill as output, which is most of the difference from
+# Sonnet. Update these if MODEL or EFFORT changes in ai_service.py.
+COST_PER_LESSON_GBP = 0.56
+COST_PER_TIER_GBP = 0.08
+SECONDS_PER_LESSON = 150
+SECONDS_PER_TIER = 45
 
 
 class Client:
@@ -142,7 +146,8 @@ def main() -> int:
     if not any([args.all, args.key_stage, args.strand, args.topics]):
         return parser.error(
             "choose a scope: --all, --key-stage, --strand or --topics. "
-            "Warming all 74 topics takes about an hour and costs around £10, "
+            "Warming all 74 topics takes several hours and costs around £60 "
+            "on Opus 5, "
             "so it should be asked for explicitly."
         )
 
@@ -161,7 +166,12 @@ def main() -> int:
     units = sum(len(work) for _, work in plan)
     print(f"\n{units} item(s) to generate across {len(plan)} topic(s)")
     print(f"Estimated cost: about £{estimate(plan):.2f}")
-    print(f"Estimated time: about {units * 35 / 60:.0f} minutes\n")
+    minutes = sum(
+        SECONDS_PER_LESSON if item == "lesson" else SECONDS_PER_TIER
+        for _, work in plan
+        for item in work
+    ) / 60
+    print(f"Estimated time: about {minutes:.0f} minutes\n")
     for topic, work in plan:
         print(f"  {topic['id']:>3}  {topic['topic_name'][:46]:<46} {', '.join(work)}")
 

@@ -20,7 +20,7 @@ All 9 implementation phases from `CLAUDE.md` are complete, plus a tenth piece of
 - SQLite via SQLAlchemy (WAL mode enabled)
 - Alembic for migrations, starting from `0001_initial_schema`
 - `python-dotenv` for local `.env` loading
-- `services/ai_service.py` — single source of truth for Anthropic API calls (`claude-sonnet-5`), with a 30s timeout and one retry on timeout/429/5xx per call, and structured logging of topic_id/difficulty/duration/token count on every call
+- `services/ai_service.py` — single source of truth for Anthropic API calls (`claude-opus-5`, adaptive thinking at `effort=high`), with a 240s timeout and one retry on timeout/429/5xx per call, and structured logging of topic_id/difficulty/duration/token count on every call
 - `weasyprint` for server-side PDF export, `markdown` for converting lesson notes to HTML before rendering
 - Single-password authentication in `backend/auth.py` — stdlib scrypt hashing, a signed session cookie via Starlette's `SessionMiddleware`, and a login gate in front of every route
 - `pytest` + `httpx` for testing, with the Anthropic client mocked via `unittest.mock` — 111 tests, none ever call the real API
@@ -128,7 +128,7 @@ Teachers' Standard 5, on its own tab because it is read while planning against a
 
 ## Pre-generating content
 
-Generation takes ~40s for a lesson and ~25s per question tier. Fine the evening before; not fine five minutes before a lesson. `scripts/warm_cache.py` walks the topics you choose and generates them ahead of time.
+Generation takes ~2.5 minutes for a lesson and ~45s per question tier (Opus 5 with thinking). Fine the evening before; not fine five minutes before a lesson. `scripts/warm_cache.py` walks the topics you choose and generates them ahead of time.
 
 It drives the **live API over HTTP**, not a local database — the deployed instance keeps its SQLite file on its own disk, so a script writing locally would populate the wrong copy.
 
@@ -149,7 +149,7 @@ $PY mathsai/scripts/warm_cache.py --topics 15 26 41
 Both paths carry the `mathsai/` prefix. Running from inside `mathsai/`
 instead works too — then it is `backend/.venv/bin/python scripts/warm_cache.py`.
 
-Already-cached content is skipped for free — `has_cached_lesson` and the questions `status` endpoint both report state without triggering generation — so re-running after an interruption costs nothing for what is already done. A scope is required: warming all 74 topics takes about an hour and costs around £10, which should be asked for deliberately.
+Already-cached content is skipped for free — `has_cached_lesson` and the questions `status` endpoint both report state without triggering generation — so re-running after an interruption costs nothing for what is already done. A scope is required: warming all 74 topics takes several hours and costs around £60 on Opus 5, which should be asked for deliberately.
 
 ## The reviewed workflow
 
