@@ -14,8 +14,9 @@ venv/
 # Pre-migration backups — README tells you to take one before every
 # migration, so this filename recurs. The repo is public and the .db
 # holds everything generated and taught.
-*.db.bak
-*.bak
+# Trailing * so SQLite's WAL sidecars are covered too: a backup of
+# mathsai.db produces mathsai.db.bak, .bak-shm and .bak-wal.
+*.bak*
 
 # Logs
 *.log
