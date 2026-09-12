@@ -132,14 +132,22 @@ Generation takes ~40s for a lesson and ~25s per question tier. Fine the evening 
 
 It drives the **live API over HTTP**, not a local database — the deployed instance keeps its SQLite file on its own disk, so a script writing locally would populate the wrong copy.
 
+Run it from the repository root (the directory containing `mathsai/`), using
+the backend virtualenv since the script needs `httpx`:
+
 ```bash
 export MATHSAI_URL=https://your-instance.onrender.com
 export MATHSAI_PASSWORD='...'
 
-python scripts/warm_cache.py --dry-run --all            # plan and cost, spends nothing
-python scripts/warm_cache.py --key-stage KS3 --strand Algebra
-python scripts/warm_cache.py --topics 15 26 41
+PY=mathsai/backend/.venv/bin/python
+
+$PY mathsai/scripts/warm_cache.py --all --dry-run          # plan and cost, spends nothing
+$PY mathsai/scripts/warm_cache.py --key-stage KS3 --strand Algebra
+$PY mathsai/scripts/warm_cache.py --topics 15 26 41
 ```
+
+Both paths carry the `mathsai/` prefix. Running from inside `mathsai/`
+instead works too — then it is `backend/.venv/bin/python scripts/warm_cache.py`.
 
 Already-cached content is skipped for free — `has_cached_lesson` and the questions `status` endpoint both report state without triggering generation — so re-running after an interruption costs nothing for what is already done. A scope is required: warming all 74 topics takes about an hour and costs around £10, which should be asked for deliberately.
 
