@@ -23,9 +23,36 @@ All 9 implementation phases from `CLAUDE.md` are complete, plus a tenth piece of
 - `services/ai_service.py` — single source of truth for Anthropic API calls (`claude-opus-5`, adaptive thinking at `effort=high`), with a 240s timeout and one retry on timeout/429/5xx per call, and structured logging of topic_id/difficulty/duration/token count on every call
 - `weasyprint` for server-side PDF export, `markdown` for converting lesson notes to HTML before rendering
 - Single-password authentication in `backend/auth.py` — stdlib scrypt hashing, a signed session cookie via Starlette's `SessionMiddleware`, and a login gate in front of every route
-- `pytest` + `httpx` for testing, with the Anthropic client mocked via `unittest.mock` — 111 tests, none ever call the real API
+- `pytest` + `httpx` for testing, with the Anthropic client mocked via `unittest.mock` — 114 tests, none ever call the real API
 - React 19 + Vite + Tailwind CSS v3 + React Router, via Axios (`frontend/src/api/client.js`)
 - `react-markdown` for rendering AI-generated lesson notes
+
+## Project structure
+
+```
+mathsai/
+├── backend/
+│   ├── main.py                  FastAPI app, middleware order, SPA mount
+│   ├── auth.py                  Password hashing, session gate, login page
+│   ├── models.py                SQLAlchemy models
+│   ├── schemas.py               Pydantic contracts + LESSON_SCHEMA_VERSION
+│   ├── routers/                 topics, lessons, questions, progress, export
+│   ├── services/
+│   │   ├── ai_service.py        Every Anthropic call. Prompts live here
+│   │   ├── cache_service.py     Cache read/write, validation, stale fallback
+│   │   └── curriculum.py        Static taxonomy + year-group backfill
+│   ├── alembic/versions/        Migrations
+│   └── tests/                   pytest suite
+├── frontend/src/
+│   ├── pages/                   Dashboard, Lesson, Questions, Progress
+│   ├── components/              TeachingSequence, AdaptivePanel, …
+│   └── api/client.js            Axios client — the only place HTTP happens
+├── scripts/warm_cache.py        Pre-generates content against the live API
+├── Dockerfile                   Two-stage: builds frontend, serves both
+└── docker-compose.yml
+```
+
+Two rules worth knowing before changing anything: **all Anthropic calls live in `ai_service.py`**, and **all frontend HTTP goes through `api/client.js`**. Both are load-bearing — the first keeps the API key server-side and the prompts in one place, the second means auth redirects and error handling are defined once.
 
 ## API route reference
 
@@ -263,13 +290,45 @@ pytest
 
 Tests never call the real Anthropic API — `ai_service` is mocked via `unittest.mock` in every test that exercises `cache_service`/`ai_service`. `conftest.py` points `DATABASE_URL` at a throwaway SQLite file before the app is imported, so running tests never touches your real dev database.
 
-In CI: `.github/workflows/test.yml` runs the same suite on every push/PR touching `mathsai/backend/`, using a dummy `ANTHROPIC_API_KEY` so it runs with no real key and no cost. It installs WeasyPrint's native dependencies via `apt-get` first, since the export tests exercise real PDF rendering (with `cache_service` mocked, not the renderer).
+In CI: `.github/workflows/test.yml` runs both suites on every push/PR touching `mathsai/backend/` or `mathsai/frontend/`, using a dummy `ANTHROPIC_API_KEY` so it runs with no real key and no cost. It installs WeasyPrint's native dependencies via `apt-get` first, since the export tests exercise real PDF rendering (with `cache_service` mocked, not the renderer).
 
-There's no frontend test suite — at this scale, the per-phase manual browser verification (Playwright-driven, screenshotted) that was used throughout development is what stands in for it; see `CLAUDE.md` → Production Hardening → Testing strategy for the reasoning.
+Frontend:
+
+```bash
+cd mathsai/frontend
+npm run test:render
+```
+
+This builds the lesson components with Vite in SSR mode and renders them against a real captured API payload. It exists because `npm run build` succeeding proves only that the syntax parses — a dangling variable reference compiles cleanly and throws at runtime, which is exactly how a blank Lesson page once reached production. There is still no component unit-test suite; this checks that every component renders, which is the failure that actually occurred.
+
+## Troubleshooting
+
+**"Generation temporarily unavailable — please try again shortly."**
+A 503: the Anthropic call failed twice. Check the key is valid and you have not hit a spend limit. If a lesson was previously cached you will be served the old one rather than an error.
+
+**A lesson takes two to three minutes to appear.**
+Expected on Opus 5 with thinking — it is writing the whole teaching sequence across three concurrent calls. It is cached permanently afterwards. Use `scripts/warm_cache.py` to move that wait off the critical path.
+
+**A lesson has no starter, no I do/We do, no adaptive teaching.**
+It was generated under an older content format. The header shows `format v1 · superseded` and an amber banner offers regeneration. Old rows are never regenerated automatically, since that would spend credits across every topic already generated.
+
+**The app will not start in production.**
+`ENVIRONMENT=production` requires `APP_PASSWORD_HASH` and `SECRET_KEY`; without them it refuses to boot rather than serve unauthenticated. The error names what is missing.
+
+**A page renders blank after a frontend change.**
+Almost certainly a runtime `ReferenceError` — a build succeeding does not mean anything renders. Run `npm run test:render`.
+
+**Render shows 502 for a minute after a push.**
+Normal: the container is being replaced. It returns to 200 once the new one passes its health check.
 
 ## Database migrations
 
-Alembic manages all schema changes — never a manual `ALTER TABLE`. The full Phase 1 schema is captured in `0001_initial_schema`; every change since (including the `reviewed`/`regeneration_log` fields Phase 9 uses) was already part of that baseline.
+Alembic manages all schema changes — never a manual `ALTER TABLE`.
+
+| Revision | What it adds |
+|---|---|
+| `0001_initial_schema` | The full Phase 1 schema, including the `reviewed` fields and `regeneration_log` |
+| `0002_teaching_sequence` | `topics.year_group`; `lesson_cache.content` + `schema_version`; renames the `question_cache.difficulty` values to the Assessment Objective tiers |
 
 **Before running any migration against a database that holds real content, back up the `.db` file first**:
 
@@ -289,4 +348,10 @@ alembic current                           # show which revision the database is 
 
 ## Model note
 
-`CLAUDE.md` originally specified `claude-sonnet-4-6`, which is not a valid Anthropic model ID. This project uses **`claude-sonnet-5`** instead, wherever the AI service is implemented.
+`CLAUDE.md` originally specified `claude-sonnet-4-6`, which is not a valid Anthropic model ID.
+
+The project now runs **`claude-opus-5`** with adaptive thinking at `effort=high`, set in `backend/services/ai_service.py`. It moved from `claude-sonnet-5` because the failure mode that matters here is content failure — well-formed JSON containing wrong mathematics — which structural validation cannot catch, and mathematical reasoning is where Opus pulls ahead.
+
+Measured difference on one KS4 lesson: **56p and ~143s on Opus, against 23p and ~42s on Sonnet.** Thinking tokens bill as output, which is most of the gap.
+
+`model_used` is recorded on every cache row and nothing regenerates unless asked, so changing this constant only affects content generated afterwards. Switching back to Sonnet would leave everything already cached untouched.
