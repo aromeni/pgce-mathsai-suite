@@ -25,6 +25,14 @@ const TABS = [
   { key: "reference", label: "Reference" },
 ];
 
+// Lessons cached under schema version 1 have no teaching sequence and no
+// adaptive teaching, so offering those tabs promises content that does not
+// exist — clicking "Adapt" would just show the old notes again.
+const LEGACY_TABS = [
+  { key: "teach", label: "Lesson notes" },
+  { key: "reference", label: "Reference" },
+];
+
 const DIFFICULTY_TIERS = ["Fluency", "Reasoning", "Problem-solving"];
 
 export default function Lesson() {
@@ -36,6 +44,9 @@ export default function Lesson() {
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [errorMessage, setErrorMessage] = useState("");
   const [activeTab, setActiveTab] = useState("teach");
+  // "adapt" does not exist for legacy lessons; fall back rather than
+  // render a tab with nothing behind it.
+  const tab = lesson?.outdated_format && activeTab === "adapt" ? "teach" : activeTab;
   const [regenerating, setRegenerating] = useState(false);
   const [taughtFormOpen, setTaughtFormOpen] = useState(false);
   const [taughtJustLogged, setTaughtJustLogged] = useState(false);
@@ -147,7 +158,7 @@ export default function Lesson() {
       </div>
 
       <div className="mb-6 flex gap-1 border-b border-border">
-        {TABS.map((t) => (
+        {(lesson.outdated_format ? LEGACY_TABS : TABS).map((t) => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
@@ -165,7 +176,7 @@ export default function Lesson() {
       {lesson.outdated_format ? (
         <>
           <OutdatedFormatNotice onRegenerate={() => setConfirmRegenerateOpen(true)} busy={regenerating} />
-          {activeTab === "reference" ? (
+          {tab === "reference" ? (
             <ReferencePanel lesson={lesson} />
           ) : (
             <LegacyLessonPanel lesson={lesson} />
@@ -173,14 +184,14 @@ export default function Lesson() {
         </>
       ) : (
         <>
-          {activeTab === "teach" && (
+          {tab === "teach" && (
             <TeachingSequence
               lesson={lesson}
               onGoToQuestions={(tier) => navigate(`/questions/${topicId}/${tier}`)}
             />
           )}
-          {activeTab === "adapt" && <AdaptivePanel adaptive={lesson.adaptive_teaching} />}
-          {activeTab === "reference" && <ReferencePanel lesson={lesson} />}
+          {tab === "adapt" && <AdaptivePanel adaptive={lesson.adaptive_teaching} />}
+          {tab === "reference" && <ReferencePanel lesson={lesson} />}
         </>
       )}
 
